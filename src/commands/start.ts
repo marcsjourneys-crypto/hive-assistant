@@ -1,5 +1,7 @@
 import chalk from 'chalk';
 import ora from 'ora';
+import * as fs from 'fs';
+import * as path from 'path';
 import { getConfig, getApiKey } from '../utils/config';
 import { getDatabase } from '../db/interface';
 import { createOrchestrator } from '../core/orchestrator';
@@ -16,9 +18,34 @@ interface StartOptions {
   verbose?: boolean;
 }
 
+/** Get the path to the PID file. */
+export function getPidFile(): string {
+  const config = getConfig();
+  return path.join(config.dataDir, 'hive.pid');
+}
+
+/** Write the current process PID to disk. */
+function writePidFile(): void {
+  const pidFile = getPidFile();
+  fs.writeFileSync(pidFile, String(process.pid), 'utf-8');
+}
+
+/** Remove the PID file. */
+function removePidFile(): void {
+  try {
+    const pidFile = getPidFile();
+    if (fs.existsSync(pidFile)) {
+      fs.unlinkSync(pidFile);
+    }
+  } catch {
+    // Best-effort cleanup
+  }
+}
+
 /**
  * Start the Hive assistant.
- * Initializes all components and launches the CLI channel.
+ * Initializes all components and launches channels.
+ * In daemon mode, runs headless with only messaging channels.
  */
 export async function startCommand(options: StartOptions): Promise<void> {
   const spinner = ora('Starting Hive...').start();
@@ -31,6 +58,17 @@ export async function startCommand(options: StartOptions): Promise<void> {
     if (!apiKey) {
       spinner.fail('No API key configured. Run `hive setup` first.');
       process.exit(1);
+    }
+
+    // In daemon mode, require at least one messaging channel
+    if (options.daemon) {
+      const hasChannel = config.channels.whatsapp.enabled ||
+        (config.channels.telegram.enabled && config.channels.telegram.botToken);
+      if (!hasChannel) {
+        spinner.fail('Daemon mode requires at least one messaging channel (WhatsApp or Telegram).');
+        console.log(chalk.gray('  Enable a channel with `hive channels login whatsapp` or `hive channels login telegram`'));
+        process.exit(1);
+      }
     }
 
     // 2. Initialize database
@@ -68,6 +106,9 @@ export async function startCommand(options: StartOptions): Promise<void> {
     }
 
     console.log(chalk.cyan(`\n${assistantName} is online.`));
+    if (options.daemon) {
+      console.log(chalk.gray(`  Mode: daemon (PID ${process.pid})`));
+    }
 
     if (options.verbose) {
       console.log(chalk.gray(`  Database: ${config.database.type}`));
@@ -96,11 +137,14 @@ export async function startCommand(options: StartOptions): Promise<void> {
       console.log(chalk.green('  Telegram channel starting...'));
     }
 
-    // 8. Handle shutdown signals
+    // 8. Write PID file and handle shutdown signals
+    writePidFile();
+
     const shutdown = async () => {
       console.log(chalk.gray('\nShutting down...'));
       if (whatsapp) whatsapp.stop();
       if (telegram) telegram.stop();
+      removePidFile();
       await db.close();
       process.exit(0);
     };
@@ -108,13 +152,25 @@ export async function startCommand(options: StartOptions): Promise<void> {
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
 
-    // 9. Start CLI channel (blocking)
+    // 9. Start CLI or keep alive in daemon mode
     if (options.daemon) {
-      console.log(chalk.yellow('Daemon mode not yet implemented. Starting in interactive mode.'));
+      console.log(chalk.gray('\n  Running in daemon mode. Use `hive stop` to shut down.\n'));
+      // Keep process alive - channels are event-driven
+      const keepAlive = setInterval(() => {}, 60_000);
+      // Clear interval on shutdown so process can exit cleanly
+      const originalShutdown = shutdown;
+      const daemonShutdown = async () => {
+        clearInterval(keepAlive);
+        await originalShutdown();
+      };
+      process.removeAllListeners('SIGINT');
+      process.removeAllListeners('SIGTERM');
+      process.on('SIGINT', daemonShutdown);
+      process.on('SIGTERM', daemonShutdown);
+    } else {
+      const cli = new CLIChannel(gateway, 'cli-user');
+      await cli.start();
     }
-
-    const cli = new CLIChannel(gateway, 'cli-user');
-    await cli.start();
 
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

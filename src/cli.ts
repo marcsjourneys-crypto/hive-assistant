@@ -11,6 +11,7 @@ import { soulCommand } from './commands/soul';
 import { profileCommand } from './commands/profile';
 import { statusCommand } from './commands/status';
 import { sendCommand } from './commands/send';
+import { stopCommand } from './commands/stop';
 
 const program = new Command();
 
@@ -37,7 +38,7 @@ program
 program
   .command('stop')
   .description('Stop the assistant daemon')
-  .action(() => { console.log('Stopping...'); });
+  .action(stopCommand);
 
 program
   .command('status')

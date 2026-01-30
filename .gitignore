@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.js
+!ecosystem.config.js
 *.d.ts
 !src/types/*.d.ts
 *.js.map
