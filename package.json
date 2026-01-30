@@ -6,8 +6,13 @@
   "bin": {
     "hive": "./dist/cli.js"
   },
+  "files": [
+    "dist/",
+    "ecosystem.config.js"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "dev": "ts-node src/cli.ts",
     "start": "node dist/cli.js start",
     "test": "jest",
