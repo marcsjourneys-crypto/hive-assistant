@@ -111,7 +111,7 @@ export class Orchestrator {
       throw new Error(`Ollama request failed: ${response.statusText}`);
     }
     
-    const data = await response.json();
+    const data = await response.json() as { message: { content: string } };
     return data.message.content;
   }
   

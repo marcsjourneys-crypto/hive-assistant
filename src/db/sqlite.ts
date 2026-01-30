@@ -12,7 +12,7 @@ import {
 } from './interface';
 
 export class SQLiteDatabase implements IDatabase {
-  private db: Database.Database;
+  private db!: Database.Database;
   private dbPath: string;
   
   constructor(dbPath: string) {

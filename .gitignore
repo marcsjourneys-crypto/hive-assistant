@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.js
 *.d.ts
+!src/types/*.d.ts
 *.js.map
 
 # Environment

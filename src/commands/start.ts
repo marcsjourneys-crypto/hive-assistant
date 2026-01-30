@@ -4,8 +4,11 @@ import { getConfig, getApiKey } from '../utils/config';
 import { getDatabase } from '../db/interface';
 import { createOrchestrator } from '../core/orchestrator';
 import { Executor } from '../core/executor';
+import { Summarizer } from '../core/summarizer';
 import { Gateway } from '../core/gateway';
 import { CLIChannel } from '../channels/cli';
+import { WhatsAppChannel } from '../channels/whatsapp';
+import { TelegramChannel } from '../channels/telegram';
 import { loadSoul } from '../core/soul';
 
 interface StartOptions {
@@ -41,13 +44,17 @@ export async function startCommand(options: StartOptions): Promise<void> {
     // 4. Create executor
     const executor = new Executor();
 
-    // 5. Create gateway
+    // 5. Create summarizer
+    const summarizer = new Summarizer(db, executor);
+
+    // 6. Create gateway
     const gateway = new Gateway({
       db,
       orchestrator,
       executor,
       workspacePath: config.workspace,
-      defaultUserId: 'cli-user'
+      defaultUserId: 'cli-user',
+      summarizer
     });
 
     spinner.succeed('Hive is ready!');
@@ -69,9 +76,31 @@ export async function startCommand(options: StartOptions): Promise<void> {
       console.log(chalk.gray(`  Workspace: ${config.workspace}`));
     }
 
-    // 6. Handle shutdown signals
+    // 7. Start messaging channels
+    let whatsapp: WhatsAppChannel | null = null;
+    let telegram: TelegramChannel | null = null;
+
+    if (config.channels.whatsapp.enabled) {
+      whatsapp = new WhatsAppChannel(gateway);
+      whatsapp.start().catch(err => {
+        console.error(chalk.red(`WhatsApp error: ${err.message}`));
+      });
+      console.log(chalk.green('  WhatsApp channel starting...'));
+    }
+
+    if (config.channels.telegram.enabled && config.channels.telegram.botToken) {
+      telegram = new TelegramChannel(gateway, config.channels.telegram.botToken);
+      telegram.start().catch(err => {
+        console.error(chalk.red(`Telegram error: ${err.message}`));
+      });
+      console.log(chalk.green('  Telegram channel starting...'));
+    }
+
+    // 8. Handle shutdown signals
     const shutdown = async () => {
       console.log(chalk.gray('\nShutting down...'));
+      if (whatsapp) whatsapp.stop();
+      if (telegram) telegram.stop();
       await db.close();
       process.exit(0);
     };
@@ -79,7 +108,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
 
-    // 7. Start CLI channel
+    // 9. Start CLI channel (blocking)
     if (options.daemon) {
       console.log(chalk.yellow('Daemon mode not yet implemented. Starting in interactive mode.'));
     }

@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Database } from '../db/interface';
 import { Orchestrator, RoutingDecision, SkillInfo } from './orchestrator';
 import { Executor } from './executor';
+import { Summarizer } from './summarizer';
 import { buildContext } from './context-builder';
 import { loadSkillsMeta, findAndLoadSkill, SkillMeta } from '../skills/loader';
 
@@ -12,6 +13,7 @@ export interface GatewayConfig {
   executor: Executor;
   workspacePath: string;
   defaultUserId: string;
+  summarizer?: Summarizer;
 }
 
 /** Result returned from handleMessage. */
@@ -39,6 +41,7 @@ export class Gateway {
   private executor: Executor;
   private workspacePath: string;
   private defaultUserId: string;
+  private summarizer?: Summarizer;
   private skillsCache: SkillMeta[] | null = null;
 
   constructor(config: GatewayConfig) {
@@ -47,6 +50,7 @@ export class Gateway {
     this.executor = config.executor;
     this.workspacePath = config.workspacePath;
     this.defaultUserId = config.defaultUserId;
+    this.summarizer = config.summarizer;
   }
 
   /**
@@ -101,6 +105,14 @@ export class Gateway {
       ? findAndLoadSkill(routing.selectedSkill, this.workspacePath)
       : null;
 
+    // 7b. Inject DB summary if orchestrator didn't provide one
+    if (!routing.contextSummary) {
+      const conv = await this.db.getConversation(convId);
+      if (conv?.summary) {
+        routing.contextSummary = conv.summary;
+      }
+    }
+
     // 8. Build context (exclude current message from history; buildContext adds it)
     const historyForContext = recentMessages.slice(0, -1).map(m => ({
       role: m.role as 'user' | 'assistant',
@@ -123,7 +135,14 @@ export class Gateway {
       content: result.content
     });
 
-    // 11. Log usage
+    // 11. Check if conversation needs summarization
+    if (this.summarizer) {
+      this.summarizer.summarizeIfNeeded(convId).catch(() => {
+        // Summarization is non-critical; don't fail the response
+      });
+    }
+
+    // 12. Log usage
     await this.db.logUsage({
       userId,
       model: result.model,
@@ -132,7 +151,7 @@ export class Gateway {
       costCents: result.costCents
     });
 
-    // 12. Return result
+    // 13. Return result
     return {
       response: result.content,
       conversationId: convId,
