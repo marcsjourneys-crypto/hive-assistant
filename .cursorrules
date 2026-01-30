@@ -1,0 +1,123 @@
+# Cursor Rules for Hive Assistant
+
+## Project Context
+This is Hive Assistant - a personal AI assistant that uses an "orchestrator pattern" to dramatically reduce API costs. Read CLAUDE.md for full architecture details.
+
+## Key Files to Understand
+- `CLAUDE.md` - Full project context, architecture, and design decisions
+- `TASKS.md` - Current implementation tasks with specifications
+- `src/core/orchestrator.ts` - The routing brain (already built)
+- `src/db/interface.ts` - Database abstraction (already built)
+
+## Coding Standards
+
+### TypeScript
+- Use strict mode (already configured in tsconfig.json)
+- Prefer interfaces over types for object shapes
+- Use `async/await`, never callbacks
+- Avoid `any` - use `unknown` if type is truly unknown
+
+### Imports
+- Use relative imports within src/
+- Import types with `import type` when possible
+- Order: node builtins → external packages → internal modules
+
+### Error Handling
+- Always wrap async operations in try/catch
+- Throw descriptive Error objects, not strings
+- Log errors before re-throwing
+
+### Database
+- Always use the Database interface, never import sqlite.ts directly (except in sqlite.ts itself)
+- All database operations are async
+- Use transactions for multi-step operations
+
+### Configuration
+- Use `getConfig()` from utils/config.ts
+- Never hardcode paths like `~/.hive` - use config.dataDir
+- Environment variables override config file values
+
+## Architecture Rules
+
+### Orchestrator Pattern
+The orchestrator (Haiku/Ollama) MUST be called before the executor (Sonnet/Opus). This is how we save costs. The flow is:
+1. User message → Orchestrator (cheap)
+2. Orchestrator returns: which skill, what context, which model
+3. Context Builder assembles minimal prompt
+4. Executor calls the selected model
+
+### Context Injection
+Never inject everything. The orchestrator decides:
+- `personalityLevel: 'full' | 'minimal' | 'none'`
+- `includeBio: boolean`
+- `bioSections: string[]`
+- `selectedSkill: string | null`
+
+### Skills
+Skills use the AgentSkills spec (SKILL.md with YAML frontmatter). They're loaded from:
+1. `{workspace}/skills/` (user's workspace - highest priority)
+2. `~/.hive/skills/` (shared/installed skills)
+3. Bundled skills (lowest priority)
+
+## What's Built vs TODO
+
+### ✅ Built
+- `src/commands/setup.ts` - Full onboarding wizard
+- `src/core/orchestrator.ts` - Routing logic
+- `src/core/soul.ts` - Personality system
+- `src/core/profile.ts` - User profile
+- `src/db/interface.ts` - Database abstraction
+- `src/db/sqlite.ts` - SQLite implementation
+- `src/utils/config.ts` - Configuration
+
+### 🔨 Needs Implementation (Priority Order)
+1. `src/core/executor.ts` - Claude API calls
+2. `src/core/context-builder.ts` - Prompt assembly
+3. `src/core/gateway.ts` - Main message loop
+4. `src/channels/cli.ts` - CLI for testing
+5. `src/commands/start.ts` - Wire it up
+6. `src/skills/loader.ts` - Load SKILL.md files
+
+See TASKS.md for detailed specifications.
+
+## Testing
+
+For MVP, test via CLI:
+```bash
+npm run dev start
+# Then type messages and verify responses
+```
+
+Check:
+1. Does orchestrator route correctly?
+2. Is token usage lower than expected?
+3. Does personality come through?
+4. Do errors handle gracefully?
+
+## Common Patterns
+
+### Loading config and database
+```typescript
+import { getConfig } from '../utils/config';
+import { getDatabase } from '../db/interface';
+
+const config = getConfig();
+const db = await getDatabase(config.database);
+```
+
+### Getting soul/profile context
+```typescript
+import { getSoulPrompt } from '../core/soul';
+import { getProfilePrompt } from '../core/profile';
+
+const soulPrompt = getSoulPrompt('minimal'); // or 'full' or 'none'
+const profilePrompt = getProfilePrompt(['professional']); // specific sections
+```
+
+### Calling orchestrator
+```typescript
+import { createOrchestrator } from '../core/orchestrator';
+
+const orchestrator = createOrchestrator();
+const routing = await orchestrator.route(message, history, skills);
+```
