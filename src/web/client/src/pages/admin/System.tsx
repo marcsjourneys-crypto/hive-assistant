@@ -19,6 +19,7 @@ export default function System() {
   const [web, setWeb] = useState({ port: 3000, host: 'localhost' });
   const [user, setUser] = useState({ name: '', preferredName: '', timezone: '' });
   const [debug, setDebug] = useState({ enabled: false, retentionDays: 30 });
+  const [ollamaTest, setOllamaTest] = useState<{ testing: boolean; result: { ok: boolean; message: string; durationMs: number } | null }>({ testing: false, result: null });
 
   // Credential fields
   const [apiKey, setApiKey] = useState('');
@@ -94,6 +95,19 @@ export default function System() {
       await loadConfig();
     } catch (err: any) {
       setError(err.message);
+    }
+  };
+
+  const handleTestOllama = async () => {
+    setOllamaTest({ testing: true, result: null });
+    try {
+      const result = await admin.testOllama(
+        orchestrator.options?.ollama?.endpoint,
+        orchestrator.options?.ollama?.model
+      );
+      setOllamaTest({ testing: false, result });
+    } catch (err: any) {
+      setOllamaTest({ testing: false, result: { ok: false, message: err.message, durationMs: 0 } });
     }
   };
 
@@ -221,6 +235,20 @@ export default function System() {
                       options: { ...orchestrator.options, ollama: { ...orchestrator.options?.ollama, endpoint: orchestrator.options?.ollama?.endpoint || 'http://localhost:11434', model: e.target.value } }
                     })}
                   />
+                </div>
+                <div className="border-t border-gray-100 pt-3">
+                  <button
+                    onClick={handleTestOllama}
+                    disabled={ollamaTest.testing}
+                    className="px-4 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-900 disabled:opacity-50"
+                  >
+                    {ollamaTest.testing ? 'Testing...' : 'Test Ollama Connection'}
+                  </button>
+                  {ollamaTest.result && (
+                    <div className={`mt-2 text-sm p-2 rounded ${ollamaTest.result.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                      {ollamaTest.result.message}
+                    </div>
+                  )}
                 </div>
               </>
             )}

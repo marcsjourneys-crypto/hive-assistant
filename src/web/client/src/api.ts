@@ -206,6 +206,11 @@ export const admin = {
       method: 'PUT',
       body: JSON.stringify(creds),
     }),
+  testOllama: (endpoint?: string, model?: string) =>
+    request<{ ok: boolean; message: string; durationMs: number }>('/admin/ollama/test', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint, model }),
+    }),
 };
 
 // Debug Logs

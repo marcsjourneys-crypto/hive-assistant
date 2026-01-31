@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { Database as IDatabase } from '../../db/interface';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { getConfig, saveConfig } from '../../utils/config';
+import { testOllamaConnection } from '../../core/orchestrator';
 
 export function createAdminRoutes(db: IDatabase): Router {
   const router = Router();
@@ -244,6 +245,21 @@ export function createAdminRoutes(db: IDatabase): Router {
     } catch (error: any) {
       console.error('[Admin] Update credentials error:', error.message);
       res.status(500).json({ error: 'Failed to update credentials' });
+    }
+  });
+
+  /**
+   * POST /api/admin/ollama/test
+   * Test Ollama connectivity and model availability.
+   */
+  router.post('/ollama/test', async (req: Request, res: Response) => {
+    try {
+      const { endpoint, model } = req.body || {};
+      const result = await testOllamaConnection(endpoint, model);
+      res.json(result);
+    } catch (error: any) {
+      console.error('[Admin] Ollama test error:', error.message);
+      res.status(500).json({ ok: false, message: error.message, durationMs: 0 });
     }
   });
 

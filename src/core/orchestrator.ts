@@ -63,23 +63,28 @@ export class Orchestrator {
     
     try {
       let result: string;
-      
+
       if (this.config.provider === 'ollama') {
+        console.log(`  [orchestrator] Calling Ollama at ${this.config.options?.ollama?.endpoint || 'http://localhost:11434'} model=${this.config.options?.ollama?.model || 'llama3.2'}`);
         result = await this.callOllama(prompt);
+        console.log(`  [orchestrator] Ollama responded OK`);
       } else {
         result = await this.callHaiku(prompt);
       }
-      
+
       const decision = JSON.parse(extractJson(result));
       return this.enrichDecision(decision);
 
-    } catch (error) {
+    } catch (error: any) {
+      console.error(`  [orchestrator] Primary provider (${this.config.provider}) failed:`, error.message || error);
+
       // Try fallback if available
       if (this.config.fallback && this.config.fallback !== this.config.provider) {
-        console.log(`Orchestrator primary failed, trying fallback: ${this.config.fallback}`);
+        console.log(`  [orchestrator] Trying fallback: ${this.config.fallback}`);
         return this.routeWithFallback(prompt, userMessage);
       }
 
+      console.log(`  [orchestrator] No fallback configured, using heuristic defaults`);
       // Return safe defaults if all else fails
       return this.getDefaultDecision(userMessage);
     }
@@ -105,24 +110,38 @@ export class Orchestrator {
   private async callOllama(prompt: string): Promise<string> {
     const endpoint = this.config.options?.ollama?.endpoint || 'http://localhost:11434';
     const model = this.config.options?.ollama?.model || 'llama3.2';
-    
-    const response = await fetch(`${endpoint}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        stream: false,
-        format: 'json'
-      })
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Ollama request failed: ${response.statusText}`);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    try {
+      const response = await fetch(`${endpoint}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          stream: false,
+          format: 'json'
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`Ollama request failed: ${response.status} ${response.statusText} — ${body}`);
+      }
+
+      const data = await response.json() as { message: { content: string } };
+      return data.message.content;
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        throw new Error(`Ollama request timed out after 15s (endpoint: ${endpoint}, model: ${model})`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-    
-    const data = await response.json() as { message: { content: string } };
-    return data.message.content;
   }
   
   private async routeWithFallback(prompt: string, userMessage: string): Promise<RoutingDecision> {
@@ -139,9 +158,11 @@ export class Orchestrator {
       }
 
       const decision = JSON.parse(extractJson(result));
+      console.log(`  [orchestrator] Fallback (${this.config.provider}) succeeded`);
       return this.enrichDecision(decision);
 
-    } catch {
+    } catch (error: any) {
+      console.error(`  [orchestrator] Fallback (${this.config.provider}) also failed:`, error.message || error);
       // Both providers failed — use safe defaults
       return this.getDefaultDecision(userMessage);
     } finally {
@@ -351,4 +372,86 @@ JSON only, no explanation:`;
 export function createOrchestrator(): Orchestrator {
   const config = getConfig();
   return new Orchestrator(config.orchestrator);
+}
+
+/**
+ * Test Ollama connectivity. Returns { ok, message, durationMs }.
+ */
+export async function testOllamaConnection(endpoint?: string, model?: string): Promise<{ ok: boolean; message: string; durationMs: number }> {
+  const config = getConfig();
+  const url = endpoint || config.orchestrator?.options?.ollama?.endpoint || 'http://localhost:11434';
+  const modelName = model || config.orchestrator?.options?.ollama?.model || 'llama3.2';
+  const start = Date.now();
+
+  try {
+    // First check if Ollama is reachable at all
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const tagsRes = await fetch(`${url}/api/tags`, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (!tagsRes.ok) {
+        return { ok: false, message: `Ollama reachable but /api/tags returned ${tagsRes.status}`, durationMs: Date.now() - start };
+      }
+
+      const tagsData = await tagsRes.json() as { models?: Array<{ name: string }> };
+      const models = (tagsData.models || []).map((m: { name: string }) => m.name);
+      const hasModel = models.some((n: string) => n === modelName || n.startsWith(`${modelName}:`));
+
+      if (!hasModel) {
+        return {
+          ok: false,
+          message: `Ollama running but model "${modelName}" not found. Available: ${models.join(', ') || 'none'}`,
+          durationMs: Date.now() - start
+        };
+      }
+    } catch (err: any) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') {
+        return { ok: false, message: `Connection to ${url} timed out after 10s`, durationMs: Date.now() - start };
+      }
+      return { ok: false, message: `Cannot reach Ollama at ${url}: ${err.message}`, durationMs: Date.now() - start };
+    }
+
+    // Try a simple inference
+    const controller2 = new AbortController();
+    const timeout2 = setTimeout(() => controller2.abort(), 15000);
+
+    try {
+      const chatRes = await fetch(`${url}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelName,
+          messages: [{ role: 'user', content: 'Respond with exactly: {"test":"ok"}' }],
+          stream: false,
+          format: 'json'
+        }),
+        signal: controller2.signal
+      });
+      clearTimeout(timeout2);
+
+      if (!chatRes.ok) {
+        const body = await chatRes.text().catch(() => '');
+        return { ok: false, message: `Ollama chat failed: ${chatRes.status} ${chatRes.statusText} — ${body}`, durationMs: Date.now() - start };
+      }
+
+      await chatRes.json();
+      return {
+        ok: true,
+        message: `OK — model "${modelName}" responded in ${Date.now() - start}ms`,
+        durationMs: Date.now() - start
+      };
+    } catch (err: any) {
+      clearTimeout(timeout2);
+      if (err.name === 'AbortError') {
+        return { ok: false, message: `Ollama inference timed out after 15s`, durationMs: Date.now() - start };
+      }
+      return { ok: false, message: `Ollama chat error: ${err.message}`, durationMs: Date.now() - start };
+    }
+  } catch (err: any) {
+    return { ok: false, message: `Unexpected error: ${err.message}`, durationMs: Date.now() - start };
+  }
 }
