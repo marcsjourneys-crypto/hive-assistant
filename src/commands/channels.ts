@@ -87,6 +87,23 @@ async function loginWhatsApp(): Promise<void> {
     fs.mkdirSync(credDir, { recursive: true });
   }
 
+  // Ask for phone number (needed to send self-chat replies via phone JID, not LID)
+  console.log(chalk.gray('\nYour phone number is needed so the assistant can reply to you.'));
+  console.log(chalk.gray('Enter it with country code, digits only (e.g., 13604015688).\n'));
+
+  const { number } = await inquirer.prompt([{
+    type: 'input',
+    name: 'number',
+    message: 'Your WhatsApp phone number:',
+    validate: (input: string) => {
+      const digits = input.replace(/\D/g, '');
+      if (digits.length < 7 || digits.length > 15) return 'Enter a valid phone number with country code';
+      return true;
+    },
+    filter: (input: string) => input.replace(/\D/g, '')
+  }]);
+
+  setConfigValue('channels.whatsapp.number', number);
   setConfigValue('channels.whatsapp.enabled', true);
 
   console.log(chalk.green('\nWhatsApp channel enabled.'));

@@ -11,6 +11,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import chalk from 'chalk';
 import { Gateway } from '../core/gateway';
+import { getConfig } from '../utils/config';
 
 const HIVE_DIR = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.hive');
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -29,10 +30,18 @@ export class WhatsAppChannel {
   private sentMessageIds: Set<string> = new Set();
   private reconnectAttempts = 0;
   private credentialsPath: string;
+  private ownerJid: string | null = null;
 
   constructor(gateway: Gateway) {
     this.gateway = gateway;
     this.credentialsPath = path.join(HIVE_DIR, 'credentials', 'whatsapp');
+
+    // Load the owner's phone number from config for self-chat replies
+    const config = getConfig();
+    const number = config.channels.whatsapp.number;
+    if (number) {
+      this.ownerJid = `${number}@s.whatsapp.net`;
+    }
   }
 
   /**
@@ -171,7 +180,9 @@ export class WhatsAppChannel {
    * Handle a single incoming message.
    */
   private async handleIncomingMessage(jid: string, text: string): Promise<void> {
-    const userId = this.getUserId(jid);
+    // Resolve the reply JID: if the incoming JID is a LID, use the owner's phone JID instead
+    const replyJid = this.resolveReplyJid(jid);
+    const userId = this.getUserId(replyJid);
     console.log(chalk.gray(`  [WA] Message from ${userId}: "${text.substring(0, 80)}${text.length > 80 ? '...' : ''}"`));
 
     try {
@@ -184,9 +195,9 @@ export class WhatsAppChannel {
       const result = await this.gateway.handleMessage(userId, text, 'whatsapp', conversationId);
       this.conversations.set(userId, result.conversationId);
 
-      // Send response and track its ID to avoid re-processing our own reply
+      // Send response to the phone number JID (not the LID)
       if (this.sock) {
-        const sent = await this.sock.sendMessage(jid, { text: result.response });
+        const sent = await this.sock.sendMessage(replyJid, { text: result.response });
         if (sent?.key?.id) {
           this.sentMessageIds.add(sent.key.id);
         }
@@ -199,7 +210,7 @@ export class WhatsAppChannel {
 
       // Try to send error message to user
       if (this.sock) {
-        const sent = await this.sock.sendMessage(jid, {
+        const sent = await this.sock.sendMessage(replyJid, {
           text: 'Sorry, something went wrong processing your message. Please try again.'
         }).catch(() => undefined);
         if (sent?.key?.id) {
@@ -207,6 +218,17 @@ export class WhatsAppChannel {
         }
       }
     }
+  }
+
+  /**
+   * Resolve the JID to reply to. If the incoming message used a LID,
+   * substitute the owner's phone number JID so the reply is delivered.
+   */
+  private resolveReplyJid(jid: string): string {
+    if (jid.endsWith('@lid') && this.ownerJid) {
+      return this.ownerJid;
+    }
+    return jid;
   }
 
   /**
