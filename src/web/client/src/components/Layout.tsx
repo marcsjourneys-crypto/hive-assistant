@@ -3,6 +3,7 @@ import { useAuth } from '../auth-context';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: '📊' },
+  { to: '/chat', label: 'Chat', icon: '💬' },
   { to: '/settings/soul', label: 'Personality', icon: '🎭' },
   { to: '/settings/profile', label: 'Profile', icon: '👤' },
   { to: '/settings/skills', label: 'Skills', icon: '⚡' },

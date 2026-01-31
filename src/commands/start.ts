@@ -150,7 +150,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
     if (config.web?.enabled) {
       const webPort = config.web.port || 3000;
       const webHost = config.web.host || '0.0.0.0';
-      const app = createWebServer({ db, port: webPort, host: webHost });
+      const app = createWebServer({ db, port: webPort, host: webHost, gateway });
       webServer = app.listen(webPort, webHost, () => {
         console.log(chalk.green(`  Web dashboard: http://${webHost === '0.0.0.0' ? 'localhost' : webHost}:${webPort}`));
       });

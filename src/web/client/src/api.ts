@@ -213,6 +213,59 @@ export const admin = {
     }),
 };
 
+// Chat
+export interface ChatConversation {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  createdAt: string;
+}
+
+export interface SendMessageResult {
+  response: string;
+  conversationId: string;
+  usage: {
+    model: string;
+    tokensIn: number;
+    tokensOut: number;
+    costCents: number;
+  };
+}
+
+export const chat = {
+  conversations: () =>
+    request<ChatConversation[]>('/chat/conversations'),
+
+  createConversation: (title?: string) =>
+    request<ChatConversation>('/chat/conversations', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    }),
+
+  messages: (conversationId: string, limit?: number) =>
+    request<ChatMessage[]>(
+      `/chat/conversations/${conversationId}/messages${limit ? `?limit=${limit}` : ''}`
+    ),
+
+  sendMessage: (conversationId: string, message: string) =>
+    request<SendMessageResult>(`/chat/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }),
+
+  deleteConversation: (conversationId: string) =>
+    request<{ success: boolean }>(`/chat/conversations/${conversationId}`, {
+      method: 'DELETE',
+    }),
+};
+
 // Debug Logs
 export interface DebugLogSummary {
   id: string;

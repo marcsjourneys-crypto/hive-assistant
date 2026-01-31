@@ -13,11 +13,14 @@ import { createUsageRoutes } from './routes/usage';
 import { createChannelsRoutes } from './routes/channels';
 import { createAdminRoutes } from './routes/admin';
 import { createLogsRoutes } from './routes/logs';
+import { createChatRoutes } from './routes/chat';
+import { Gateway } from '../core/gateway';
 
 export interface WebServerConfig {
   db: IDatabase;
   port: number;
   host: string;
+  gateway?: Gateway;
 }
 
 /**
@@ -43,6 +46,9 @@ export function createWebServer(config: WebServerConfig): express.Express {
   app.use('/api/channels', createChannelsRoutes());
   app.use('/api/admin', createAdminRoutes(db));
   app.use('/api/logs', createLogsRoutes(db));
+  if (config.gateway) {
+    app.use('/api/chat', createChatRoutes(db, config.gateway));
+  }
 
   // Serve React client build (production)
   const clientBuildPath = path.join(__dirname, 'client');

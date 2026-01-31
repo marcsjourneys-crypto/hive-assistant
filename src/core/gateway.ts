@@ -70,7 +70,7 @@ export class Gateway {
   async handleMessage(
     userId: string,
     message: string,
-    channel: 'whatsapp' | 'telegram' | 'cli',
+    channel: 'whatsapp' | 'telegram' | 'cli' | 'web',
     conversationId?: string
   ): Promise<HandleMessageResult> {
     // 1. Ensure user exists

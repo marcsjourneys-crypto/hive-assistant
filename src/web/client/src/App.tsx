@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { ProtectedRoute, AdminRoute } from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Chat from './pages/Chat';
 import SoulEditor from './pages/SoulEditor';
 import ProfileEditor from './pages/ProfileEditor';
 import Skills from './pages/Skills';
@@ -35,6 +36,7 @@ export default function App() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="chat" element={<Chat />} />
         <Route path="settings/soul" element={<SoulEditor />} />
         <Route path="settings/profile" element={<ProfileEditor />} />
         <Route path="settings/skills" element={<Skills />} />
