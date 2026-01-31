@@ -1,6 +1,6 @@
 import { RoutingDecision } from './orchestrator';
 import { getSoulPrompt } from './soul';
-import { getProfilePrompt, getBasicIdentityPrompt } from './profile';
+import { getProfilePrompt, getBasicIdentityPrompt, getUserPreferences } from './profile';
 import { SkillContent } from '../skills/loader';
 
 /** The assembled context ready for the executor. */
@@ -65,6 +65,26 @@ export function buildContext(
     if (identity) {
       parts.push(identity);
     }
+  }
+
+  // Inject current date/time so the model always knows "today" (~15 tokens).
+  const prefs = getUserPreferences();
+  try {
+    const now = new Date();
+    const formatted = now.toLocaleString('en-US', {
+      timeZone: prefs.timezone || undefined,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
+    parts.push(`Current date and time: ${formatted}.`);
+  } catch {
+    // If timezone is invalid, fall back to UTC
+    parts.push(`Current date and time: ${new Date().toUTCString()}.`);
   }
 
   // Full user profile/bio injection (only when orchestrator requests it).
