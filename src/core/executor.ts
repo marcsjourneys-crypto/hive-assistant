@@ -36,7 +36,7 @@ const PRICING: Record<ModelName, { input: number; output: number }> = {
 /** Default max tokens per model tier. */
 const DEFAULT_MAX_TOKENS: Record<ModelName, number> = {
   haiku: 1024,
-  sonnet: 2048,
+  sonnet: 4096,
   opus: 4096
 };
 

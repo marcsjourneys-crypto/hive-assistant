@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Database } from '../db/interface';
 import { Orchestrator, RoutingDecision, SkillInfo } from './orchestrator';
-import { Executor } from './executor';
+import { Executor, ModelName } from './executor';
 import { Summarizer } from './summarizer';
 import { buildContext, UserPromptOverrides } from './context-builder';
 import { loadSkillsMeta, findAndLoadSkill, SkillMeta } from '../skills/loader';
@@ -145,8 +145,10 @@ export class Gateway {
     const context = buildContext(routing, message, historyForContext, skill, overrides);
     if (debug) console.log(`  [gateway] Context built: ~${context.estimatedTokens} tokens, system prompt ${context.systemPrompt.length} chars`);
 
-    // 10. Execute against Claude API with timing for debug logs
-    console.log(`  [gateway] Calling ${routing.suggestedModel} API...`);
+    // 10. Resolve final model: use executor config mapping based on complexity,
+    //     with orchestrator's suggestedModel as a hint.
+    const resolvedModel = this.resolveModel(routing);
+    console.log(`  [gateway] Calling ${resolvedModel} API... (orchestrator suggested ${routing.suggestedModel}, complexity=${routing.complexity})`);
     const startTime = Date.now();
     let responseText = '';
     let actualModel = '';
@@ -159,7 +161,7 @@ export class Gateway {
     try {
       const result = await this.executor.execute(
         context.messages,
-        routing.suggestedModel,
+        resolvedModel,
         { systemPrompt: context.systemPrompt }
       );
 
@@ -321,6 +323,28 @@ export class Gateway {
       });
     } catch (err: any) {
       console.error('  [gateway] Failed to save debug log:', err.message);
+    }
+  }
+
+  /**
+   * Resolve which model to use based on the executor config and routing decision.
+   * The orchestrator's complexity field maps to the executor config tiers:
+   *   simple  → config.ai.executor.simple  (default: haiku)
+   *   medium  → config.ai.executor.default (default: sonnet)
+   *   complex → config.ai.executor.complex (default: opus)
+   */
+  private resolveModel(routing: RoutingDecision): ModelName {
+    const config = getConfig();
+    const executor = config.ai?.executor;
+    if (!executor) return routing.suggestedModel;
+
+    switch (routing.complexity) {
+      case 'simple':
+        return (executor.simple || 'haiku') as ModelName;
+      case 'complex':
+        return (executor.complex || 'opus') as ModelName;
+      default:
+        return (executor.default || 'sonnet') as ModelName;
     }
   }
 
