@@ -11,10 +11,10 @@
     "ecosystem.config.js"
   ],
   "scripts": {
-    "build": "tsc && npm run build:client",
-    "build:server": "tsc",
+    "build": "npx tsc && npm run build:client",
+    "build:server": "npx tsc",
     "build:client": "cd src/web/client && npm install && npm run build",
-    "prepare": "tsc && npm run build:client",
+    "prepare": "npx tsc && npm run build:client",
     "dev": "ts-node src/cli.ts",
     "start": "node dist/cli.js start",
     "test": "jest",
