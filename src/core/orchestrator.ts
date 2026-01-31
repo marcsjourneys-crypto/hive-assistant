@@ -112,7 +112,7 @@ export class Orchestrator {
     const model = this.config.options?.ollama?.model || 'llama3.2';
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 45000);
 
     try {
       const response = await fetch(`${endpoint}/api/chat`, {
@@ -136,7 +136,7 @@ export class Orchestrator {
       return data.message.content;
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        throw new Error(`Ollama request timed out after 15s (endpoint: ${endpoint}, model: ${model})`);
+        throw new Error(`Ollama request timed out after 45s (endpoint: ${endpoint}, model: ${model})`);
       }
       throw error;
     } finally {
@@ -175,43 +175,28 @@ export class Orchestrator {
     history: Array<{ role: string; content: string }>,
     skills: SkillInfo[]
   ): string {
-    const skillsText = skills.length > 0
-      ? skills.map(s => `- ${s.name}: ${s.description}`).join('\n')
-      : 'No skills available';
-    
-    const historyText = history.length > 0
-      ? history.slice(-5).map(m => `${m.role}: ${m.content.substring(0, 150)}${m.content.length > 150 ? '...' : ''}`).join('\n')
-      : 'No prior conversation';
-    
-    return `You are a routing assistant. Analyze this request and output JSON only.
+    // Use a compact prompt optimized for small/local models (3b params on CPU).
+    // Keep input short, minimize required output tokens.
+    const skillNames = skills.length > 0
+      ? skills.map(s => s.name).join(', ')
+      : 'none';
 
-User message: "${userMessage}"
+    const hasHistory = history.length > 0;
+    const lastMsg = hasHistory
+      ? history[history.length - 1].content.substring(0, 100)
+      : '';
 
-Available skills:
-${skillsText}
+    return `Classify this message. JSON only.
 
-Recent conversation:
-${historyText}
+Message: "${userMessage.substring(0, 200)}"
+${hasHistory ? `Last context: "${lastMsg}"` : ''}
+Skills: ${skillNames}
 
-Respond with this exact JSON structure:
-{
-  "selectedSkill": "skill-name or null if no skill needed",
-  "contextSummary": "2-3 sentence summary of relevant context from history, or null if no relevant history",
-  "intent": "task_query|file_operation|conversation|creative|code|analysis|greeting|briefing|personal",
-  "complexity": "simple|medium|complex",
-  "suggestedModel": "haiku|sonnet|opus"
-}
+Output:
+{"intent":"greeting|conversation|personal|briefing|task_query|code|analysis|creative|file_operation","complexity":"simple|medium|complex","suggestedModel":"haiku|sonnet|opus","selectedSkill":null,"contextSummary":null}
 
-Guidelines:
-- greeting/conversation → haiku
-- personal (questions about the user, preferences, "what do you know about me") → haiku
-- simple queries, task lookups → haiku
-- code generation, analysis, complex reasoning → sonnet
-- critical decisions, long documents, creative writing → opus
-- If a skill clearly matches the request, select it
-- If the user references prior conversation, summarize the relevant context
-
-JSON only, no explanation:`;
+Rules: greeting/conversation/personal→haiku, simple queries→haiku, code/analysis→sonnet, creative/complex→opus.
+JSON only:`;
   }
   
   /**
