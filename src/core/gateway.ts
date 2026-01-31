@@ -328,7 +328,16 @@ export class Gateway {
 
   /**
    * Resolve which model to use based on the executor config and routing decision.
-   * The orchestrator's complexity field maps to the executor config tiers:
+   *
+   * Uses intent to enforce minimum complexity — the small orchestrator model
+   * reliably classifies intent but often marks everything as "simple".
+   *
+   * Intent-based minimums:
+   *   code, analysis, creative, briefing → at least medium
+   *   file_operation                     → at least medium
+   *   greeting, conversation, personal   → can be simple
+   *
+   * Then maps effective complexity to executor config tiers:
    *   simple  → config.ai.executor.simple  (default: haiku)
    *   medium  → config.ai.executor.default (default: sonnet)
    *   complex → config.ai.executor.complex (default: opus)
@@ -338,7 +347,15 @@ export class Gateway {
     const executor = config.ai?.executor;
     if (!executor) return routing.suggestedModel;
 
-    switch (routing.complexity) {
+    // Intents that require at least the default (medium-tier) model
+    const needsAtLeastMedium = ['code', 'analysis', 'creative', 'briefing', 'file_operation', 'task_query'];
+    let effectiveComplexity = routing.complexity;
+
+    if (effectiveComplexity === 'simple' && needsAtLeastMedium.includes(routing.intent)) {
+      effectiveComplexity = 'medium';
+    }
+
+    switch (effectiveComplexity) {
       case 'simple':
         return (executor.simple || 'haiku') as ModelName;
       case 'complex':
