@@ -32,10 +32,20 @@ export interface OrchestratorConfig {
   };
 }
 
+/**
+ * Strip markdown code fences from LLM responses before JSON parsing.
+ * Models often wrap JSON in ```json ... ``` blocks.
+ */
+function extractJson(text: string): string {
+  const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (fenced) return fenced[1].trim();
+  return text.trim();
+}
+
 export class Orchestrator {
   private config: OrchestratorConfig;
   private anthropic: Anthropic;
-  
+
   constructor(config: OrchestratorConfig) {
     this.config = config;
     this.anthropic = new Anthropic({ apiKey: getApiKey() });
@@ -60,16 +70,16 @@ export class Orchestrator {
         result = await this.callHaiku(prompt);
       }
       
-      const decision = JSON.parse(result);
+      const decision = JSON.parse(extractJson(result));
       return this.enrichDecision(decision);
-      
+
     } catch (error) {
       // Try fallback if available
       if (this.config.fallback && this.config.fallback !== this.config.provider) {
         console.log(`Orchestrator primary failed, trying fallback: ${this.config.fallback}`);
-        return this.routeWithFallback(prompt);
+        return this.routeWithFallback(prompt, userMessage);
       }
-      
+
       // Return safe defaults if all else fails
       return this.getDefaultDecision(userMessage);
     }
@@ -115,22 +125,25 @@ export class Orchestrator {
     return data.message.content;
   }
   
-  private async routeWithFallback(prompt: string): Promise<RoutingDecision> {
+  private async routeWithFallback(prompt: string, userMessage: string): Promise<RoutingDecision> {
     const originalProvider = this.config.provider;
     this.config.provider = this.config.fallback!;
-    
+
     try {
       let result: string;
-      
+
       if (this.config.provider === 'ollama') {
         result = await this.callOllama(prompt);
       } else {
         result = await this.callHaiku(prompt);
       }
-      
-      const decision = JSON.parse(result);
+
+      const decision = JSON.parse(extractJson(result));
       return this.enrichDecision(decision);
-      
+
+    } catch {
+      // Both providers failed — use safe defaults
+      return this.getDefaultDecision(userMessage);
     } finally {
       this.config.provider = originalProvider;
     }
