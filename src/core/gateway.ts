@@ -101,8 +101,11 @@ export class Gateway {
     }));
 
     // 6. Route through orchestrator
+    const debug = process.env.HIVE_LOG_LEVEL === 'debug';
+    if (debug) console.log(`  [gateway] Routing message for ${userId}...`);
     const historyForOrchestrator = recentMessages.slice(-5);
     const routing = await this.orchestrator.route(message, historyForOrchestrator, skillInfos);
+    console.log(`  [gateway] Routed: intent=${routing.intent}, model=${routing.suggestedModel}`);
 
     // 7. Load selected skill if orchestrator chose one
     const skill = routing.selectedSkill
@@ -138,13 +141,16 @@ export class Gateway {
       content: m.content
     }));
     const context = buildContext(routing, message, historyForContext, skill, overrides);
+    if (debug) console.log(`  [gateway] Context built: ~${context.estimatedTokens} tokens, system prompt ${context.systemPrompt.length} chars`);
 
     // 10. Execute against Claude API
+    console.log(`  [gateway] Calling ${routing.suggestedModel} API...`);
     const result = await this.executor.execute(
       context.messages,
       routing.suggestedModel,
       { systemPrompt: context.systemPrompt }
     );
+    console.log(`  [gateway] Response received: ${result.tokensIn}+${result.tokensOut} tokens, $${result.costCents.toFixed(3)}c`);
 
     // 11. Save assistant response to DB
     await this.db.addMessage({

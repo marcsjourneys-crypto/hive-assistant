@@ -172,6 +172,7 @@ export class WhatsAppChannel {
    */
   private async handleIncomingMessage(jid: string, text: string): Promise<void> {
     const userId = this.getUserId(jid);
+    console.log(chalk.gray(`  [WA] Message from ${userId}: "${text.substring(0, 80)}${text.length > 80 ? '...' : ''}"`));
 
     try {
       // Mark as read
@@ -191,15 +192,10 @@ export class WhatsAppChannel {
         }
       }
 
-      if (process.env.HIVE_LOG_LEVEL === 'debug') {
-        console.log(chalk.gray(
-          `  [WA ${userId}] ${result.routing.intent} | ${result.routing.suggestedModel} | ` +
-          `${result.usage.tokensIn}+${result.usage.tokensOut} tokens`
-        ));
-      }
+      console.log(chalk.green(`  [WA] Reply sent to ${userId} (${result.usage.tokensIn}+${result.usage.tokensOut} tokens)`));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(chalk.red(`WhatsApp error for ${userId}: ${message}`));
+      console.error(chalk.red(`  [WA] Error for ${userId}: ${message}`));
 
       // Try to send error message to user
       if (this.sock) {
