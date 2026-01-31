@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { initializeDatabase } from '../db/sqlite';
 import { Config, saveConfig, getDefaultConfig } from '../utils/config';
 import { saveSoul, SoulConfig, VOICE_PRESETS } from '../core/soul';
@@ -52,6 +53,12 @@ async function quickSetup() {
   // Save config with defaults
   const config = getDefaultConfig();
   config.ai.apiKey = apiKey;
+  config.web = {
+    enabled: true,
+    port: 3000,
+    host: '0.0.0.0',
+    jwtSecret: crypto.randomBytes(32).toString('hex')
+  };
   saveConfig(config);
   
   // Create default soul and profile
@@ -319,9 +326,47 @@ async function fullSetup() {
     console.log(chalk.green('✅ Telegram configured'));
   }
   
+  // Step 10: Web Dashboard
+  console.log(chalk.cyan('\n─'.repeat(50)));
+  console.log(chalk.bold('\n🌐 Web Dashboard\n'));
+  console.log(chalk.gray('The web dashboard lets team members log in and customize'));
+  console.log(chalk.gray('their own assistant settings from a browser.\n'));
+
+  const { enableWeb } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'enableWeb',
+      message: 'Enable the web dashboard?',
+      default: true
+    }
+  ]);
+
+  let webConfig: Config['web'] | undefined;
+
+  if (enableWeb) {
+    const { webPort } = await inquirer.prompt([
+      {
+        type: 'number',
+        name: 'webPort',
+        message: 'Web dashboard port:',
+        default: 3000
+      }
+    ]);
+
+    const jwtSecret = crypto.randomBytes(32).toString('hex');
+    webConfig = {
+      enabled: true,
+      port: webPort,
+      host: '0.0.0.0',
+      jwtSecret
+    };
+
+    console.log(chalk.green(`✅ Web dashboard will be available on port ${webPort}`));
+  }
+
   // Save everything
   spinner.start('Saving configuration...');
-  
+
   const config: Config = {
     version: '1.0.0',
     dataDir,
@@ -346,7 +391,8 @@ async function fullSetup() {
       preferredName: userName,
       timezone,
       briefingTime: briefingTime || undefined
-    }
+    },
+    web: webConfig
   };
   
   saveConfig(config);
@@ -392,10 +438,15 @@ async function fullSetup() {
   if (looksGood) {
     console.log(chalk.green(`\n${assistantName} is ready!\n`));
     console.log(chalk.gray(`Start the assistant:    ${chalk.white('hive start')}`));
+    console.log(chalk.gray(`Start as daemon:        ${chalk.white('hive start --daemon')}`));
     console.log(chalk.gray(`Send a test message:    ${chalk.white('hive send "Hello!"')}`));
     console.log(chalk.gray(`View status:            ${chalk.white('hive status')}`));
     console.log(chalk.gray(`Edit personality:       ${chalk.white('hive soul edit')}`));
-    console.log(chalk.gray(`Edit your profile:      ${chalk.white('hive profile edit')}\n`));
+    console.log(chalk.gray(`Edit your profile:      ${chalk.white('hive profile edit')}`));
+    if (webConfig) {
+      console.log(chalk.gray(`Web dashboard:          ${chalk.white(`http://localhost:${webConfig.port}`)}`));
+    }
+    console.log();
   } else {
     console.log(chalk.yellow('\nYou can customize further with:'));
     console.log(chalk.gray(`  hive soul edit     - Change personality`));

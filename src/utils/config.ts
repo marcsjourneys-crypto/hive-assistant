@@ -48,6 +48,12 @@ export interface Config {
     timezone: string;
     briefingTime?: string;
   };
+  web?: {
+    enabled: boolean;
+    port: number;
+    host: string;
+    jwtSecret: string;
+  };
 }
 
 const HIVE_DIR = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.hive');

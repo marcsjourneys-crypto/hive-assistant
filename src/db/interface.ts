@@ -48,6 +48,36 @@ export interface UsageLog {
   createdAt: Date;
 }
 
+export interface UserAuth {
+  userId: string;
+  email: string;
+  passwordHash: string;
+  isAdmin: boolean;
+  lastLogin?: Date;
+  createdAt: Date;
+}
+
+export interface UserSoul {
+  userId: string;
+  name: string;
+  voice: string;
+  traits: string[];
+  customInstructions?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UserProfile {
+  userId: string;
+  name: string;
+  preferredName: string;
+  timezone: string;
+  bio: string;
+  sections: Record<string, string>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface Database {
   // Initialization
   initialize(): Promise<void>;
@@ -87,6 +117,24 @@ export interface Database {
     totalCostCents: number;
     byModel: Record<string, { tokensIn: number; tokensOut: number; costCents: number }>;
   }>;
+
+  // Auth
+  getUserAuth(email: string): Promise<UserAuth | null>;
+  getUserAuthByUserId(userId: string): Promise<UserAuth | null>;
+  createUserAuth(auth: Omit<UserAuth, 'createdAt' | 'lastLogin'>): Promise<UserAuth>;
+  updateLastLogin(userId: string): Promise<void>;
+  listUserAuths(): Promise<UserAuth[]>;
+  deleteUserAuth(userId: string): Promise<void>;
+  countUserAuths(): Promise<number>;
+  updateUserAuthRole(userId: string, isAdmin: boolean): Promise<void>;
+
+  // Per-user Soul
+  getUserSoul(userId: string): Promise<UserSoul | null>;
+  saveUserSoul(userId: string, soul: Omit<UserSoul, 'userId' | 'createdAt' | 'updatedAt'>): Promise<UserSoul>;
+
+  // Per-user Profile
+  getUserProfile(userId: string): Promise<UserProfile | null>;
+  saveUserProfile(userId: string, profile: Omit<UserProfile, 'userId' | 'createdAt' | 'updatedAt'>): Promise<UserProfile>;
 }
 
 /**

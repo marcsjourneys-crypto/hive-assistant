@@ -1,4 +1,4 @@
-import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog } from './interface';
+import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile } from './interface';
 
 /**
  * PostgreSQL database implementation - placeholder.
@@ -31,4 +31,16 @@ export class PostgresDatabase implements IDatabase {
   async logUsage(_log: Omit<UsageLog, 'id' | 'createdAt'>): Promise<UsageLog> { throw new Error('Not implemented'); }
   async getUsage(_userId: string, _startDate?: Date, _endDate?: Date): Promise<UsageLog[]> { throw new Error('Not implemented'); }
   async getUsageSummary(_userId: string, _startDate?: Date, _endDate?: Date): Promise<{ totalTokensIn: number; totalTokensOut: number; totalCostCents: number; byModel: Record<string, { tokensIn: number; tokensOut: number; costCents: number }>; }> { throw new Error('Not implemented'); }
+  async getUserAuth(_email: string): Promise<UserAuth | null> { throw new Error('Not implemented'); }
+  async getUserAuthByUserId(_userId: string): Promise<UserAuth | null> { throw new Error('Not implemented'); }
+  async createUserAuth(_auth: Omit<UserAuth, 'createdAt' | 'lastLogin'>): Promise<UserAuth> { throw new Error('Not implemented'); }
+  async updateLastLogin(_userId: string): Promise<void> { throw new Error('Not implemented'); }
+  async listUserAuths(): Promise<UserAuth[]> { throw new Error('Not implemented'); }
+  async deleteUserAuth(_userId: string): Promise<void> { throw new Error('Not implemented'); }
+  async countUserAuths(): Promise<number> { throw new Error('Not implemented'); }
+  async updateUserAuthRole(_userId: string, _isAdmin: boolean): Promise<void> { throw new Error('Not implemented'); }
+  async getUserSoul(_userId: string): Promise<UserSoul | null> { throw new Error('Not implemented'); }
+  async saveUserSoul(_userId: string, _soul: Omit<UserSoul, 'userId' | 'createdAt' | 'updatedAt'>): Promise<UserSoul> { throw new Error('Not implemented'); }
+  async getUserProfile(_userId: string): Promise<UserProfile | null> { throw new Error('Not implemented'); }
+  async saveUserProfile(_userId: string, _profile: Omit<UserProfile, 'userId' | 'createdAt' | 'updatedAt'>): Promise<UserProfile> { throw new Error('Not implemented'); }
 }

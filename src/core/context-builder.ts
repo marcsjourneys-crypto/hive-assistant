@@ -10,6 +10,12 @@ export interface BuiltContext {
   estimatedTokens: number;
 }
 
+/** Optional per-user prompt overrides for multi-user/team support. */
+export interface UserPromptOverrides {
+  soulPrompt?: string;
+  profilePrompt?: string;
+}
+
 /** Maximum number of recent messages to include for context continuity. */
 const MAX_RECENT_MESSAGES = 5;
 
@@ -22,29 +28,45 @@ const MAX_RECENT_MESSAGES = 5;
  * @param userMessage - The current user message
  * @param recentMessages - Recent conversation messages for continuity (excluding current)
  * @param skill - Loaded skill content, if the orchestrator selected one
+ * @param overrides - Optional per-user prompt overrides for team/multi-user mode
  * @returns System prompt, messages array, and estimated token count
  */
 export function buildContext(
   routing: RoutingDecision,
   userMessage: string,
   recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
-  skill?: SkillContent | null
+  skill?: SkillContent | null,
+  overrides?: UserPromptOverrides
 ): BuiltContext {
   const parts: string[] = [];
 
-  // Personality injection based on orchestrator decision
-  const soulPrompt = getSoulPrompt(routing.personalityLevel);
-  if (soulPrompt) {
-    parts.push(soulPrompt);
+  // Personality injection based on orchestrator decision.
+  // Use per-user override if provided, otherwise fall back to global file.
+  if (overrides?.soulPrompt !== undefined) {
+    if (overrides.soulPrompt) {
+      parts.push(overrides.soulPrompt);
+    }
+  } else {
+    const soulPrompt = getSoulPrompt(routing.personalityLevel);
+    if (soulPrompt) {
+      parts.push(soulPrompt);
+    }
   }
 
-  // User profile/bio injection
+  // User profile/bio injection.
+  // Use per-user override if provided, otherwise fall back to global file.
   if (routing.includeBio) {
-    const profilePrompt = getProfilePrompt(
-      routing.bioSections.length > 0 ? routing.bioSections : undefined
-    );
-    if (profilePrompt) {
-      parts.push(profilePrompt);
+    if (overrides?.profilePrompt !== undefined) {
+      if (overrides.profilePrompt) {
+        parts.push(overrides.profilePrompt);
+      }
+    } else {
+      const profilePrompt = getProfilePrompt(
+        routing.bioSections.length > 0 ? routing.bioSections : undefined
+      );
+      if (profilePrompt) {
+        parts.push(profilePrompt);
+      }
     }
   }
 

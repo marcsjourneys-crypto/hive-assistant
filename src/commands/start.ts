@@ -12,6 +12,8 @@ import { CLIChannel } from '../channels/cli';
 import { WhatsAppChannel } from '../channels/whatsapp';
 import { TelegramChannel } from '../channels/telegram';
 import { loadSoul } from '../core/soul';
+import { createWebServer } from '../web/server';
+import { UserSettingsService } from '../services/user-settings';
 
 interface StartOptions {
   daemon?: boolean;
@@ -60,13 +62,15 @@ export async function startCommand(options: StartOptions): Promise<void> {
       process.exit(1);
     }
 
-    // In daemon mode, require at least one messaging channel
+    // In daemon mode, require at least one messaging channel or web dashboard
     if (options.daemon) {
       const hasChannel = config.channels.whatsapp.enabled ||
         (config.channels.telegram.enabled && config.channels.telegram.botToken);
-      if (!hasChannel) {
-        spinner.fail('Daemon mode requires at least one messaging channel (WhatsApp or Telegram).');
+      const hasWeb = config.web?.enabled;
+      if (!hasChannel && !hasWeb) {
+        spinner.fail('Daemon mode requires at least one channel or the web dashboard enabled.');
         console.log(chalk.gray('  Enable a channel with `hive channels login whatsapp` or `hive channels login telegram`'));
+        console.log(chalk.gray('  Or enable the web dashboard: `hive config set web.enabled true`'));
         process.exit(1);
       }
     }
@@ -85,14 +89,18 @@ export async function startCommand(options: StartOptions): Promise<void> {
     // 5. Create summarizer
     const summarizer = new Summarizer(db, executor);
 
-    // 6. Create gateway
+    // 6. Create user settings service (for per-user soul/profile)
+    const userSettings = new UserSettingsService(db);
+
+    // 7. Create gateway
     const gateway = new Gateway({
       db,
       orchestrator,
       executor,
       workspacePath: config.workspace,
       defaultUserId: 'cli-user',
-      summarizer
+      summarizer,
+      userSettings
     });
 
     spinner.succeed('Hive is ready!');
@@ -117,7 +125,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
       console.log(chalk.gray(`  Workspace: ${config.workspace}`));
     }
 
-    // 7. Start messaging channels
+    // 8. Start messaging channels
     let whatsapp: WhatsAppChannel | null = null;
     let telegram: TelegramChannel | null = null;
 
@@ -137,13 +145,25 @@ export async function startCommand(options: StartOptions): Promise<void> {
       console.log(chalk.green('  Telegram channel starting...'));
     }
 
-    // 8. Write PID file and handle shutdown signals
+    // 9. Start web dashboard
+    let webServer: ReturnType<typeof import('http').createServer> | null = null;
+    if (config.web?.enabled) {
+      const webPort = config.web.port || 3000;
+      const webHost = config.web.host || '0.0.0.0';
+      const app = createWebServer({ db, port: webPort, host: webHost });
+      webServer = app.listen(webPort, webHost, () => {
+        console.log(chalk.green(`  Web dashboard: http://${webHost === '0.0.0.0' ? 'localhost' : webHost}:${webPort}`));
+      });
+    }
+
+    // 10. Write PID file and handle shutdown signals
     writePidFile();
 
     const shutdown = async () => {
       console.log(chalk.gray('\nShutting down...'));
       if (whatsapp) whatsapp.stop();
       if (telegram) telegram.stop();
+      if (webServer) webServer.close();
       removePidFile();
       await db.close();
       process.exit(0);
@@ -152,7 +172,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
 
-    // 9. Start CLI or keep alive in daemon mode
+    // 11. Start CLI or keep alive in daemon mode
     if (options.daemon) {
       console.log(chalk.gray('\n  Running in daemon mode. Use `hive stop` to shut down.\n'));
       // Keep process alive - channels are event-driven

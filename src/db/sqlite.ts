@@ -8,7 +8,10 @@ import {
   Conversation,
   Message,
   Skill,
-  UsageLog
+  UsageLog,
+  UserAuth,
+  UserSoul,
+  UserProfile
 } from './interface';
 
 export class SQLiteDatabase implements IDatabase {
@@ -97,10 +100,44 @@ export class SQLiteDatabase implements IDatabase {
         FOREIGN KEY (user_id) REFERENCES users(id)
       );
       
+      CREATE TABLE IF NOT EXISTS user_auth (
+        user_id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        is_admin INTEGER DEFAULT 0,
+        last_login TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS user_soul (
+        user_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT 'Hive',
+        voice TEXT NOT NULL DEFAULT 'friendly',
+        traits TEXT DEFAULT '[]',
+        custom_instructions TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS user_profile (
+        user_id TEXT PRIMARY KEY,
+        name TEXT DEFAULT '',
+        preferred_name TEXT DEFAULT '',
+        timezone TEXT DEFAULT 'UTC',
+        bio TEXT DEFAULT '',
+        sections TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
       CREATE INDEX IF NOT EXISTS idx_usage_log_user_id ON usage_log(user_id);
       CREATE INDEX IF NOT EXISTS idx_usage_log_created_at ON usage_log(created_at);
+      CREATE INDEX IF NOT EXISTS idx_user_auth_email ON user_auth(email);
     `);
   }
   
@@ -402,6 +439,104 @@ export class SQLiteDatabase implements IDatabase {
     };
   }
   
+  // Auth
+  async getUserAuth(email: string): Promise<UserAuth | null> {
+    const row = this.db.prepare('SELECT * FROM user_auth WHERE email = ?').get(email) as any;
+    if (!row) return null;
+    return this.mapUserAuth(row);
+  }
+
+  async getUserAuthByUserId(userId: string): Promise<UserAuth | null> {
+    const row = this.db.prepare('SELECT * FROM user_auth WHERE user_id = ?').get(userId) as any;
+    if (!row) return null;
+    return this.mapUserAuth(row);
+  }
+
+  async createUserAuth(auth: Omit<UserAuth, 'createdAt' | 'lastLogin'>): Promise<UserAuth> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO user_auth (user_id, email, password_hash, is_admin, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(auth.userId, auth.email, auth.passwordHash, auth.isAdmin ? 1 : 0, now);
+
+    return this.getUserAuth(auth.email) as Promise<UserAuth>;
+  }
+
+  async updateLastLogin(userId: string): Promise<void> {
+    const now = new Date().toISOString();
+    this.db.prepare('UPDATE user_auth SET last_login = ? WHERE user_id = ?').run(now, userId);
+  }
+
+  async listUserAuths(): Promise<UserAuth[]> {
+    const rows = this.db.prepare('SELECT * FROM user_auth ORDER BY created_at ASC').all() as any[];
+    return rows.map(row => this.mapUserAuth(row));
+  }
+
+  async deleteUserAuth(userId: string): Promise<void> {
+    this.db.prepare('DELETE FROM user_auth WHERE user_id = ?').run(userId);
+  }
+
+  async countUserAuths(): Promise<number> {
+    const row = this.db.prepare('SELECT COUNT(*) as count FROM user_auth').get() as any;
+    return row.count;
+  }
+
+  async updateUserAuthRole(userId: string, isAdmin: boolean): Promise<void> {
+    this.db.prepare('UPDATE user_auth SET is_admin = ? WHERE user_id = ?').run(isAdmin ? 1 : 0, userId);
+  }
+
+  // Per-user Soul
+  async getUserSoul(userId: string): Promise<UserSoul | null> {
+    const row = this.db.prepare('SELECT * FROM user_soul WHERE user_id = ?').get(userId) as any;
+    if (!row) return null;
+    return this.mapUserSoul(row);
+  }
+
+  async saveUserSoul(userId: string, soul: Omit<UserSoul, 'userId' | 'createdAt' | 'updatedAt'>): Promise<UserSoul> {
+    const now = new Date().toISOString();
+    const existing = await this.getUserSoul(userId);
+
+    if (existing) {
+      this.db.prepare(`
+        UPDATE user_soul SET name = ?, voice = ?, traits = ?, custom_instructions = ?, updated_at = ?
+        WHERE user_id = ?
+      `).run(soul.name, soul.voice, JSON.stringify(soul.traits), soul.customInstructions || null, now, userId);
+    } else {
+      this.db.prepare(`
+        INSERT INTO user_soul (user_id, name, voice, traits, custom_instructions, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(userId, soul.name, soul.voice, JSON.stringify(soul.traits), soul.customInstructions || null, now, now);
+    }
+
+    return this.getUserSoul(userId) as Promise<UserSoul>;
+  }
+
+  // Per-user Profile
+  async getUserProfile(userId: string): Promise<UserProfile | null> {
+    const row = this.db.prepare('SELECT * FROM user_profile WHERE user_id = ?').get(userId) as any;
+    if (!row) return null;
+    return this.mapUserProfile(row);
+  }
+
+  async saveUserProfile(userId: string, profile: Omit<UserProfile, 'userId' | 'createdAt' | 'updatedAt'>): Promise<UserProfile> {
+    const now = new Date().toISOString();
+    const existing = await this.getUserProfile(userId);
+
+    if (existing) {
+      this.db.prepare(`
+        UPDATE user_profile SET name = ?, preferred_name = ?, timezone = ?, bio = ?, sections = ?, updated_at = ?
+        WHERE user_id = ?
+      `).run(profile.name, profile.preferredName, profile.timezone, profile.bio, JSON.stringify(profile.sections), now, userId);
+    } else {
+      this.db.prepare(`
+        INSERT INTO user_profile (user_id, name, preferred_name, timezone, bio, sections, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(userId, profile.name, profile.preferredName, profile.timezone, profile.bio, JSON.stringify(profile.sections), now, now);
+    }
+
+    return this.getUserProfile(userId) as Promise<UserProfile>;
+  }
+
   // Mappers
   private mapUser(row: any): User {
     return {
@@ -456,6 +591,42 @@ export class SQLiteDatabase implements IDatabase {
       tokensOut: row.tokens_out,
       costCents: row.cost_cents,
       createdAt: new Date(row.created_at)
+    };
+  }
+
+  private mapUserAuth(row: any): UserAuth {
+    return {
+      userId: row.user_id,
+      email: row.email,
+      passwordHash: row.password_hash,
+      isAdmin: row.is_admin === 1,
+      lastLogin: row.last_login ? new Date(row.last_login) : undefined,
+      createdAt: new Date(row.created_at)
+    };
+  }
+
+  private mapUserSoul(row: any): UserSoul {
+    return {
+      userId: row.user_id,
+      name: row.name,
+      voice: row.voice,
+      traits: JSON.parse(row.traits || '[]'),
+      customInstructions: row.custom_instructions || undefined,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
+    };
+  }
+
+  private mapUserProfile(row: any): UserProfile {
+    return {
+      userId: row.user_id,
+      name: row.name,
+      preferredName: row.preferred_name,
+      timezone: row.timezone,
+      bio: row.bio,
+      sections: JSON.parse(row.sections || '{}'),
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
     };
   }
 }

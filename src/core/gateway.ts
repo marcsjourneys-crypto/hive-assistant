@@ -3,8 +3,9 @@ import { Database } from '../db/interface';
 import { Orchestrator, RoutingDecision, SkillInfo } from './orchestrator';
 import { Executor } from './executor';
 import { Summarizer } from './summarizer';
-import { buildContext } from './context-builder';
+import { buildContext, UserPromptOverrides } from './context-builder';
 import { loadSkillsMeta, findAndLoadSkill, SkillMeta } from '../skills/loader';
+import { UserSettingsService } from '../services/user-settings';
 
 /** Configuration for creating a Gateway instance. */
 export interface GatewayConfig {
@@ -14,6 +15,7 @@ export interface GatewayConfig {
   workspacePath: string;
   defaultUserId: string;
   summarizer?: Summarizer;
+  userSettings?: UserSettingsService;
 }
 
 /** Result returned from handleMessage. */
@@ -42,6 +44,7 @@ export class Gateway {
   private workspacePath: string;
   private defaultUserId: string;
   private summarizer?: Summarizer;
+  private userSettings?: UserSettingsService;
   private skillsCache: SkillMeta[] | null = null;
 
   constructor(config: GatewayConfig) {
@@ -51,6 +54,7 @@ export class Gateway {
     this.workspacePath = config.workspacePath;
     this.defaultUserId = config.defaultUserId;
     this.summarizer = config.summarizer;
+    this.userSettings = config.userSettings;
   }
 
   /**
@@ -113,21 +117,36 @@ export class Gateway {
       }
     }
 
-    // 8. Build context (exclude current message from history; buildContext adds it)
+    // 8. Load per-user settings if UserSettingsService is available
+    let overrides: UserPromptOverrides | undefined;
+    if (this.userSettings) {
+      const [soulPrompt, profilePrompt] = await Promise.all([
+        this.userSettings.getSoulPromptForUser(userId, routing.personalityLevel),
+        routing.includeBio
+          ? this.userSettings.getProfilePromptForUser(
+              userId,
+              routing.bioSections.length > 0 ? routing.bioSections : undefined
+            )
+          : Promise.resolve(undefined)
+      ]);
+      overrides = { soulPrompt, profilePrompt };
+    }
+
+    // 9. Build context (exclude current message from history; buildContext adds it)
     const historyForContext = recentMessages.slice(0, -1).map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.content
     }));
-    const context = buildContext(routing, message, historyForContext, skill);
+    const context = buildContext(routing, message, historyForContext, skill, overrides);
 
-    // 9. Execute against Claude API
+    // 10. Execute against Claude API
     const result = await this.executor.execute(
       context.messages,
       routing.suggestedModel,
       { systemPrompt: context.systemPrompt }
     );
 
-    // 10. Save assistant response to DB
+    // 11. Save assistant response to DB
     await this.db.addMessage({
       id: uuidv4(),
       conversationId: convId,
@@ -135,14 +154,14 @@ export class Gateway {
       content: result.content
     });
 
-    // 11. Check if conversation needs summarization
+    // 12. Check if conversation needs summarization
     if (this.summarizer) {
       this.summarizer.summarizeIfNeeded(convId).catch(() => {
         // Summarization is non-critical; don't fail the response
       });
     }
 
-    // 12. Log usage
+    // 13. Log usage
     await this.db.logUsage({
       userId,
       model: result.model,
@@ -151,7 +170,7 @@ export class Gateway {
       costCents: result.costCents
     });
 
-    // 13. Return result
+    // 14. Return result
     return {
       response: result.content,
       conversationId: convId,

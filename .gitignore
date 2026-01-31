@@ -2,9 +2,16 @@ node_modules/
 dist/
 *.js
 !ecosystem.config.js
+!jest.config.js
+!src/web/client/postcss.config.js
+!src/web/client/tailwind.config.js
 *.d.ts
 !src/types/*.d.ts
 *.js.map
+
+# Build artifacts
+build-output.txt
+nul
 
 # Environment
 .env
