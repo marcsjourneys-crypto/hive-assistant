@@ -2,6 +2,7 @@ import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
   WASocket,
   proto
 } from '@whiskeysockets/baileys';
@@ -24,7 +25,7 @@ const RECONNECT_BASE_DELAY_MS = 2000;
  * decrypt its own sent message echoes via LID — they're non-fatal and just noise.
  */
 function createBaileysLogger() {
-  return pino({ level: 'warn' });
+  return pino({ level: 'silent' });
 }
 
 /**
@@ -77,6 +78,7 @@ export class WhatsAppChannel {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(this.credentialsPath);
+    const logger = createBaileysLogger();
 
     // Fetch the latest WhatsApp Web version so the handshake isn't rejected
     let version: [number, number, number] | undefined;
@@ -89,8 +91,11 @@ export class WhatsAppChannel {
     }
 
     this.sock = makeWASocket({
-      auth: state,
-      logger: createBaileysLogger(),
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, logger),
+      },
+      logger,
       printQRInTerminal: false,
       browser: ['Hive Assistant', 'Chrome', '120.0.0'],
       version,
