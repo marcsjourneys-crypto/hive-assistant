@@ -1,6 +1,7 @@
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
+  fetchLatestBaileysVersion,
   WASocket,
   proto
 } from '@whiskeysockets/baileys';
@@ -56,10 +57,21 @@ export class WhatsAppChannel {
 
     const { state, saveCreds } = await useMultiFileAuthState(this.credentialsPath);
 
+    // Fetch the latest WhatsApp Web version so the handshake isn't rejected
+    let version: [number, number, number] | undefined;
+    try {
+      const result = await fetchLatestBaileysVersion();
+      version = result.version;
+      console.log(chalk.gray(`WhatsApp using version ${version.join('.')}`));
+    } catch {
+      console.log(chalk.gray('Could not fetch latest WA version, using default'));
+    }
+
     this.sock = makeWASocket({
       auth: state,
       printQRInTerminal: false,
       browser: ['Hive Assistant', 'Chrome', '120.0.0'],
+      version,
       connectTimeoutMs: 30_000,
       defaultQueryTimeoutMs: 30_000,
       qrTimeout: 60_000,
