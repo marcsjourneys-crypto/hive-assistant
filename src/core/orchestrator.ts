@@ -398,12 +398,22 @@ export async function testOllamaConnection(endpoint?: string, model?: string): P
 
       const tagsData = await tagsRes.json() as { models?: Array<{ name: string }> };
       const models = (tagsData.models || []).map((m: { name: string }) => m.name);
-      const hasModel = models.some((n: string) => n === modelName || n.startsWith(`${modelName}:`));
+      const exactMatch = models.some((n: string) => n === modelName);
+      const tagMatch = models.find((n: string) => n.startsWith(`${modelName}:`));
 
-      if (!hasModel) {
+      if (!exactMatch && !tagMatch) {
         return {
           ok: false,
           message: `Ollama running but model "${modelName}" not found. Available: ${models.join(', ') || 'none'}`,
+          durationMs: Date.now() - start
+        };
+      }
+
+      // If the user specified "llama3.2" but the actual model is "llama3.2:3b", warn them
+      if (!exactMatch && tagMatch) {
+        return {
+          ok: false,
+          message: `Model "${modelName}" not found, but "${tagMatch}" exists. Update your config to use "${tagMatch}"`,
           durationMs: Date.now() - start
         };
       }
