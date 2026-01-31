@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { Database as IDatabase } from '../../db/interface';
 import { requireAuth, requireAdmin } from '../middleware/auth';
-import { getConfig } from '../../utils/config';
+import { getConfig, saveConfig } from '../../utils/config';
 
 export function createAdminRoutes(db: IDatabase): Router {
   const router = Router();
@@ -117,24 +117,133 @@ export function createAdminRoutes(db: IDatabase): Router {
         database: { type: config.database?.type },
         ai: {
           provider: config.ai?.provider,
+          hasApiKey: !!(config.ai?.apiKey || process.env.ANTHROPIC_API_KEY),
           executor: config.ai?.executor
         },
         orchestrator: {
           provider: config.orchestrator?.provider,
-          fallback: config.orchestrator?.fallback
+          fallback: config.orchestrator?.fallback,
+          options: config.orchestrator?.options
         },
         channels: {
-          whatsapp: { enabled: config.channels?.whatsapp?.enabled || false },
-          telegram: { enabled: config.channels?.telegram?.enabled || false }
+          whatsapp: {
+            enabled: config.channels?.whatsapp?.enabled || false,
+            number: config.channels?.whatsapp?.number || ''
+          },
+          telegram: {
+            enabled: config.channels?.telegram?.enabled || false,
+            hasBotToken: !!config.channels?.telegram?.botToken
+          }
         },
         web: {
           enabled: config.web?.enabled,
-          port: config.web?.port
+          port: config.web?.port,
+          host: config.web?.host || 'localhost'
+        },
+        user: {
+          name: config.user?.name || '',
+          preferredName: config.user?.preferredName || '',
+          timezone: config.user?.timezone || ''
+        },
+        debug: {
+          enabled: config.debug?.enabled || false,
+          retentionDays: config.debug?.retentionDays || 30
         }
       });
     } catch (error: any) {
       console.error('[Admin] System config error:', error.message);
       res.status(500).json({ error: 'Failed to load system config' });
+    }
+  });
+
+  /**
+   * PUT /api/admin/system
+   * Update system configuration (non-sensitive fields).
+   */
+  router.put('/system', (req: Request, res: Response) => {
+    try {
+      const config = getConfig();
+      const updates = req.body;
+
+      // AI executor models
+      if (updates.ai?.executor) {
+        if (updates.ai.executor.default) config.ai.executor.default = updates.ai.executor.default;
+        if (updates.ai.executor.simple) config.ai.executor.simple = updates.ai.executor.simple;
+        if (updates.ai.executor.complex) config.ai.executor.complex = updates.ai.executor.complex;
+      }
+
+      // Orchestrator
+      if (updates.orchestrator) {
+        if (updates.orchestrator.provider !== undefined) config.orchestrator.provider = updates.orchestrator.provider;
+        if (updates.orchestrator.fallback !== undefined) config.orchestrator.fallback = updates.orchestrator.fallback;
+        if (updates.orchestrator.options !== undefined) {
+          config.orchestrator.options = { ...config.orchestrator.options, ...updates.orchestrator.options };
+        }
+      }
+
+      // Channels (enable/disable and non-sensitive fields)
+      if (updates.channels) {
+        if (updates.channels.whatsapp) {
+          if (updates.channels.whatsapp.enabled !== undefined) config.channels.whatsapp.enabled = updates.channels.whatsapp.enabled;
+          if (updates.channels.whatsapp.number !== undefined) config.channels.whatsapp.number = updates.channels.whatsapp.number;
+        }
+        if (updates.channels.telegram) {
+          if (updates.channels.telegram.enabled !== undefined) config.channels.telegram.enabled = updates.channels.telegram.enabled;
+        }
+      }
+
+      // Web dashboard
+      if (updates.web) {
+        if (!config.web) config.web = { enabled: true, port: 3000, host: 'localhost', jwtSecret: '' };
+        if (updates.web.port !== undefined) config.web.port = updates.web.port;
+        if (updates.web.host !== undefined) config.web.host = updates.web.host;
+      }
+
+      // User info
+      if (updates.user) {
+        if (updates.user.name !== undefined) config.user.name = updates.user.name;
+        if (updates.user.preferredName !== undefined) config.user.preferredName = updates.user.preferredName;
+        if (updates.user.timezone !== undefined) config.user.timezone = updates.user.timezone;
+      }
+
+      // Debug
+      if (updates.debug) {
+        if (!config.debug) config.debug = { enabled: false };
+        if (updates.debug.enabled !== undefined) config.debug.enabled = updates.debug.enabled;
+        if (updates.debug.retentionDays !== undefined) config.debug.retentionDays = updates.debug.retentionDays;
+      }
+
+      saveConfig(config);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('[Admin] Update system error:', error.message);
+      res.status(500).json({ error: 'Failed to update system config' });
+    }
+  });
+
+  /**
+   * PUT /api/admin/system/credentials
+   * Update sensitive credentials (API key, bot tokens).
+   * These are never returned by GET /system.
+   */
+  router.put('/system/credentials', (req: Request, res: Response) => {
+    try {
+      const config = getConfig();
+      const { apiKey, telegramBotToken } = req.body;
+
+      if (apiKey !== undefined && apiKey !== '') {
+        config.ai.apiKey = apiKey;
+      }
+
+      if (telegramBotToken !== undefined && telegramBotToken !== '') {
+        config.channels.telegram.botToken = telegramBotToken;
+      }
+
+      saveConfig(config);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('[Admin] Update credentials error:', error.message);
+      res.status(500).json({ error: 'Failed to update credentials' });
     }
   });
 

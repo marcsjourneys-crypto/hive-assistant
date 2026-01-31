@@ -163,10 +163,26 @@ export interface AdminUsage {
 export interface SystemConfig {
   version: string;
   database: { type: string };
-  ai: { provider: string; executor: { default: string; simple: string; complex: string } };
-  orchestrator: { provider: string; fallback: string | null };
-  channels: { whatsapp: { enabled: boolean }; telegram: { enabled: boolean } };
-  web: { enabled: boolean; port: number };
+  ai: {
+    provider: string;
+    hasApiKey: boolean;
+    executor: { default: string; simple: string; complex: string };
+  };
+  orchestrator: {
+    provider: string;
+    fallback: string | null;
+    options?: {
+      ollama?: { endpoint: string; model: string };
+      haiku?: { model: string };
+    };
+  };
+  channels: {
+    whatsapp: { enabled: boolean; number: string };
+    telegram: { enabled: boolean; hasBotToken: boolean };
+  };
+  web: { enabled: boolean; port: number; host: string };
+  user: { name: string; preferredName: string; timezone: string };
+  debug: { enabled: boolean; retentionDays: number };
 }
 
 export const admin = {
@@ -180,4 +196,83 @@ export const admin = {
     request<{ success: boolean }>(`/admin/users/${userId}`, { method: 'DELETE' }),
   usage: () => request<AdminUsage[]>('/admin/usage'),
   system: () => request<SystemConfig>('/admin/system'),
+  updateSystem: (updates: Record<string, any>) =>
+    request<{ success: boolean }>('/admin/system', {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    }),
+  updateCredentials: (creds: { apiKey?: string; telegramBotToken?: string }) =>
+    request<{ success: boolean }>('/admin/system/credentials', {
+      method: 'PUT',
+      body: JSON.stringify(creds),
+    }),
+};
+
+// Debug Logs
+export interface DebugLogSummary {
+  id: string;
+  userId: string;
+  channel: string;
+  userMessage: string;
+  intent: string;
+  complexity: string;
+  suggestedModel: string;
+  selectedSkill: string | null;
+  personalityLevel: string;
+  includeBio: boolean;
+  estimatedTokens: number;
+  actualModel: string;
+  tokensIn: number;
+  tokensOut: number;
+  costCents: number;
+  tokensSaved: number;
+  durationMs: number;
+  success: boolean;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export interface DebugLogDetail extends DebugLogSummary {
+  conversationId: string;
+  bioSections: string[];
+  contextSummary: string | null;
+  systemPrompt: string;
+  messagesJson: string;
+  responseText: string;
+}
+
+export interface LogsListResponse {
+  logs: DebugLogSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface LogsStatus {
+  enabled: boolean;
+  retentionDays: number;
+  totalLogs: number;
+}
+
+export const logs = {
+  status: () => request<LogsStatus>('/logs/status'),
+  list: (filters?: { channel?: string; intent?: string; limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (filters?.channel) params.set('channel', filters.channel);
+    if (filters?.intent) params.set('intent', filters.intent);
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    if (filters?.offset) params.set('offset', String(filters.offset));
+    const qs = params.toString();
+    return request<LogsListResponse>(`/logs${qs ? `?${qs}` : ''}`);
+  },
+  get: (id: string) => request<DebugLogDetail>(`/logs/${id}`),
+  toggle: (enabled: boolean) =>
+    request<{ success: boolean; enabled: boolean }>('/logs/toggle', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }),
+  cleanup: (before?: string) =>
+    request<{ success: boolean; deleted: number }>(`/logs${before ? `?before=${before}` : ''}`, {
+      method: 'DELETE',
+    }),
 };

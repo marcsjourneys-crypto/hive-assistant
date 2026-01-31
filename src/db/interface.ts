@@ -78,6 +78,35 @@ export interface UserProfile {
   updatedAt: Date;
 }
 
+export interface DebugLog {
+  id: string;
+  userId: string;
+  conversationId: string;
+  channel: string;
+  userMessage: string;
+  intent: string;
+  complexity: string;
+  suggestedModel: string;
+  selectedSkill: string | null;
+  personalityLevel: string;
+  includeBio: boolean;
+  bioSections: string[];
+  contextSummary: string | null;
+  systemPrompt: string;
+  messagesJson: string;
+  estimatedTokens: number;
+  responseText: string;
+  actualModel: string;
+  tokensIn: number;
+  tokensOut: number;
+  costCents: number;
+  tokensSaved: number;
+  durationMs: number;
+  success: boolean;
+  errorMessage: string | null;
+  createdAt: Date;
+}
+
 export interface Database {
   // Initialization
   initialize(): Promise<void>;
@@ -135,6 +164,13 @@ export interface Database {
   // Per-user Profile
   getUserProfile(userId: string): Promise<UserProfile | null>;
   saveUserProfile(userId: string, profile: Omit<UserProfile, 'userId' | 'createdAt' | 'updatedAt'>): Promise<UserProfile>;
+
+  // Debug Logs
+  saveDebugLog(log: Omit<DebugLog, 'createdAt'>): Promise<DebugLog>;
+  getDebugLogs(filters?: { userId?: string; channel?: string; intent?: string; limit?: number; offset?: number }): Promise<DebugLog[]>;
+  getDebugLog(id: string): Promise<DebugLog | null>;
+  getDebugLogCount(filters?: { userId?: string; channel?: string; intent?: string }): Promise<number>;
+  deleteDebugLogsBefore(date: Date): Promise<number>;
 }
 
 /**

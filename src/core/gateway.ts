@@ -6,6 +6,7 @@ import { Summarizer } from './summarizer';
 import { buildContext, UserPromptOverrides } from './context-builder';
 import { loadSkillsMeta, findAndLoadSkill, SkillMeta } from '../skills/loader';
 import { UserSettingsService } from '../services/user-settings';
+import { getConfig } from '../utils/config';
 
 /** Configuration for creating a Gateway instance. */
 export interface GatewayConfig {
@@ -123,8 +124,9 @@ export class Gateway {
     // 8. Load per-user settings if UserSettingsService is available
     let overrides: UserPromptOverrides | undefined;
     if (this.userSettings) {
-      const [soulPrompt, profilePrompt] = await Promise.all([
+      const [soulPrompt, basicIdentity, profilePrompt] = await Promise.all([
         this.userSettings.getSoulPromptForUser(userId, routing.personalityLevel),
+        this.userSettings.getBasicIdentityForUser(userId),
         routing.includeBio
           ? this.userSettings.getProfilePromptForUser(
               userId,
@@ -132,7 +134,7 @@ export class Gateway {
             )
           : Promise.resolve(undefined)
       ]);
-      overrides = { soulPrompt, profilePrompt };
+      overrides = { soulPrompt, basicIdentity, profilePrompt };
     }
 
     // 9. Build context (exclude current message from history; buildContext adds it)
@@ -143,52 +145,87 @@ export class Gateway {
     const context = buildContext(routing, message, historyForContext, skill, overrides);
     if (debug) console.log(`  [gateway] Context built: ~${context.estimatedTokens} tokens, system prompt ${context.systemPrompt.length} chars`);
 
-    // 10. Execute against Claude API
+    // 10. Execute against Claude API with timing for debug logs
     console.log(`  [gateway] Calling ${routing.suggestedModel} API...`);
-    const result = await this.executor.execute(
-      context.messages,
-      routing.suggestedModel,
-      { systemPrompt: context.systemPrompt }
-    );
-    console.log(`  [gateway] Response received: ${result.tokensIn}+${result.tokensOut} tokens, $${result.costCents.toFixed(3)}c`);
+    const startTime = Date.now();
+    let responseText = '';
+    let actualModel = '';
+    let tokensIn = 0;
+    let tokensOut = 0;
+    let costCents = 0;
+    let success = true;
+    let errorMessage: string | null = null;
 
-    // 11. Save assistant response to DB
-    await this.db.addMessage({
-      id: uuidv4(),
-      conversationId: convId,
-      role: 'assistant',
-      content: result.content
-    });
+    try {
+      const result = await this.executor.execute(
+        context.messages,
+        routing.suggestedModel,
+        { systemPrompt: context.systemPrompt }
+      );
 
-    // 12. Check if conversation needs summarization
-    if (this.summarizer) {
-      this.summarizer.summarizeIfNeeded(convId).catch(() => {
-        // Summarization is non-critical; don't fail the response
+      responseText = result.content;
+      actualModel = result.model;
+      tokensIn = result.tokensIn;
+      tokensOut = result.tokensOut;
+      costCents = result.costCents;
+
+      console.log(`  [gateway] Response received: ${tokensIn}+${tokensOut} tokens, $${costCents.toFixed(3)}c`);
+
+      // 11. Save assistant response to DB
+      await this.db.addMessage({
+        id: uuidv4(),
+        conversationId: convId,
+        role: 'assistant',
+        content: result.content
       });
-    }
 
-    // 13. Log usage
-    await this.db.logUsage({
-      userId,
-      model: result.model,
-      tokensIn: result.tokensIn,
-      tokensOut: result.tokensOut,
-      costCents: result.costCents
-    });
+      // 12. Check if conversation needs summarization
+      if (this.summarizer) {
+        this.summarizer.summarizeIfNeeded(convId).catch(() => {
+          // Summarization is non-critical; don't fail the response
+        });
+      }
 
-    // 14. Return result
-    return {
-      response: result.content,
-      conversationId: convId,
-      routing,
-      usage: {
+      // 13. Log usage
+      await this.db.logUsage({
+        userId,
         model: result.model,
         tokensIn: result.tokensIn,
         tokensOut: result.tokensOut,
-        costCents: result.costCents,
-        estimatedTokensSaved: this.estimateTokensSaved(context.estimatedTokens)
-      }
-    };
+        costCents: result.costCents
+      });
+
+      // 14. Return result
+      const tokensSaved = this.estimateTokensSaved(context.estimatedTokens);
+      const handleResult: HandleMessageResult = {
+        response: result.content,
+        conversationId: convId,
+        routing,
+        usage: {
+          model: result.model,
+          tokensIn: result.tokensIn,
+          tokensOut: result.tokensOut,
+          costCents: result.costCents,
+          estimatedTokensSaved: tokensSaved
+        }
+      };
+
+      return handleResult;
+    } catch (err: any) {
+      success = false;
+      errorMessage = err.message || 'Unknown error';
+      throw err;
+    } finally {
+      // Fire-and-forget debug log (never fail the main response)
+      const durationMs = Date.now() - startTime;
+      this.saveDebugLogIfEnabled({
+        userId, conversationId: convId, channel, message,
+        routing, context, responseText, actualModel,
+        tokensIn, tokensOut, costCents,
+        tokensSaved: this.estimateTokensSaved(context.estimatedTokens),
+        durationMs, success, errorMessage
+      });
+    }
   }
 
   /**
@@ -226,6 +263,65 @@ export class Gateway {
       this.skillsCache = loadSkillsMeta(this.workspacePath);
     }
     return this.skillsCache;
+  }
+
+  /**
+   * Save a debug log entry if debug logging is enabled in config.
+   * Fire-and-forget: errors are caught and logged, never thrown.
+   */
+  private saveDebugLogIfEnabled(data: {
+    userId: string;
+    conversationId: string;
+    channel: string;
+    message: string;
+    routing: RoutingDecision;
+    context: { systemPrompt: string; messages: Array<{ role: string; content: string }>; estimatedTokens: number };
+    responseText: string;
+    actualModel: string;
+    tokensIn: number;
+    tokensOut: number;
+    costCents: number;
+    tokensSaved: number;
+    durationMs: number;
+    success: boolean;
+    errorMessage: string | null;
+  }): void {
+    try {
+      const config = getConfig();
+      if (!config.debug?.enabled) return;
+
+      this.db.saveDebugLog({
+        id: uuidv4(),
+        userId: data.userId,
+        conversationId: data.conversationId,
+        channel: data.channel,
+        userMessage: data.message,
+        intent: data.routing.intent,
+        complexity: data.routing.complexity,
+        suggestedModel: data.routing.suggestedModel,
+        selectedSkill: data.routing.selectedSkill,
+        personalityLevel: data.routing.personalityLevel,
+        includeBio: data.routing.includeBio,
+        bioSections: data.routing.bioSections,
+        contextSummary: data.routing.contextSummary,
+        systemPrompt: data.context.systemPrompt,
+        messagesJson: JSON.stringify(data.context.messages),
+        estimatedTokens: data.context.estimatedTokens,
+        responseText: data.responseText,
+        actualModel: data.actualModel,
+        tokensIn: data.tokensIn,
+        tokensOut: data.tokensOut,
+        costCents: data.costCents,
+        tokensSaved: data.tokensSaved,
+        durationMs: data.durationMs,
+        success: data.success,
+        errorMessage: data.errorMessage
+      }).catch(err => {
+        console.error('  [gateway] Failed to save debug log:', err.message);
+      });
+    } catch (err: any) {
+      console.error('  [gateway] Failed to save debug log:', err.message);
+    }
   }
 
   /**

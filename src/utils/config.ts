@@ -54,6 +54,10 @@ export interface Config {
     host: string;
     jwtSecret: string;
   };
+  debug?: {
+    enabled: boolean;
+    retentionDays?: number;
+  };
 }
 
 const HIVE_DIR = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.hive');

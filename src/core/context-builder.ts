@@ -1,6 +1,6 @@
 import { RoutingDecision } from './orchestrator';
 import { getSoulPrompt } from './soul';
-import { getProfilePrompt } from './profile';
+import { getProfilePrompt, getBasicIdentityPrompt } from './profile';
 import { SkillContent } from '../skills/loader';
 
 /** The assembled context ready for the executor. */
@@ -14,6 +14,7 @@ export interface BuiltContext {
 export interface UserPromptOverrides {
   soulPrompt?: string;
   profilePrompt?: string;
+  basicIdentity?: string;
 }
 
 /** Maximum number of recent messages to include for context continuity. */
@@ -53,7 +54,20 @@ export function buildContext(
     }
   }
 
-  // User profile/bio injection.
+  // Always inject basic user identity (name + timezone, ~20 tokens).
+  // This ensures the assistant always knows who it's talking to.
+  if (overrides?.basicIdentity !== undefined) {
+    if (overrides.basicIdentity) {
+      parts.push(overrides.basicIdentity);
+    }
+  } else {
+    const identity = getBasicIdentityPrompt();
+    if (identity) {
+      parts.push(identity);
+    }
+  }
+
+  // Full user profile/bio injection (only when orchestrator requests it).
   // Use per-user override if provided, otherwise fall back to global file.
   if (routing.includeBio) {
     if (overrides?.profilePrompt !== undefined) {

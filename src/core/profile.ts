@@ -140,6 +140,21 @@ export function getProfilePrompt(sections?: string[]): string {
 }
 
 /**
+ * Get a minimal identity prompt (name + timezone) for injection into every message.
+ * This is cheap (~20 tokens) and ensures the assistant always knows who it's talking to.
+ */
+export function getBasicIdentityPrompt(): string {
+  const profile = loadProfile();
+  const name = profile.preferredName || profile.name;
+  if (!name) return '';
+  let prompt = `The user's name is ${name}.`;
+  if (profile.timezone) {
+    prompt += ` Their timezone is ${profile.timezone}.`;
+  }
+  return prompt;
+}
+
+/**
  * Get user preferences for quick injection.
  */
 export function getUserPreferences(): { name: string; timezone: string } {

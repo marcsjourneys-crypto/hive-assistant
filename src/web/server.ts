@@ -12,6 +12,7 @@ import { createSkillsRoutes } from './routes/skills';
 import { createUsageRoutes } from './routes/usage';
 import { createChannelsRoutes } from './routes/channels';
 import { createAdminRoutes } from './routes/admin';
+import { createLogsRoutes } from './routes/logs';
 
 export interface WebServerConfig {
   db: IDatabase;
@@ -41,6 +42,7 @@ export function createWebServer(config: WebServerConfig): express.Express {
   app.use('/api/usage', createUsageRoutes(db));
   app.use('/api/channels', createChannelsRoutes());
   app.use('/api/admin', createAdminRoutes(db));
+  app.use('/api/logs', createLogsRoutes(db));
 
   // Serve React client build (production)
   const clientBuildPath = path.join(__dirname, 'client');

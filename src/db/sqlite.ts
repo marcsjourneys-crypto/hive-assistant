@@ -11,7 +11,8 @@ import {
   UsageLog,
   UserAuth,
   UserSoul,
-  UserProfile
+  UserProfile,
+  DebugLog
 } from './interface';
 
 export class SQLiteDatabase implements IDatabase {
@@ -133,11 +134,41 @@ export class SQLiteDatabase implements IDatabase {
         FOREIGN KEY (user_id) REFERENCES users(id)
       );
 
+      CREATE TABLE IF NOT EXISTS debug_logs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        user_message TEXT NOT NULL,
+        intent TEXT,
+        complexity TEXT,
+        suggested_model TEXT,
+        selected_skill TEXT,
+        personality_level TEXT,
+        include_bio INTEGER DEFAULT 0,
+        bio_sections TEXT DEFAULT '[]',
+        context_summary TEXT,
+        system_prompt TEXT,
+        messages_json TEXT,
+        estimated_tokens INTEGER,
+        response_text TEXT,
+        actual_model TEXT,
+        tokens_in INTEGER DEFAULT 0,
+        tokens_out INTEGER DEFAULT 0,
+        cost_cents REAL DEFAULT 0,
+        tokens_saved INTEGER DEFAULT 0,
+        duration_ms INTEGER DEFAULT 0,
+        success INTEGER DEFAULT 1,
+        error_message TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
       CREATE INDEX IF NOT EXISTS idx_usage_log_user_id ON usage_log(user_id);
       CREATE INDEX IF NOT EXISTS idx_usage_log_created_at ON usage_log(created_at);
       CREATE INDEX IF NOT EXISTS idx_user_auth_email ON user_auth(email);
+      CREATE INDEX IF NOT EXISTS idx_debug_logs_created_at ON debug_logs(created_at);
     `);
   }
   
@@ -537,6 +568,69 @@ export class SQLiteDatabase implements IDatabase {
     return this.getUserProfile(userId) as Promise<UserProfile>;
   }
 
+  // Debug Logs
+  async saveDebugLog(log: Omit<DebugLog, 'createdAt'>): Promise<DebugLog> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO debug_logs (
+        id, user_id, conversation_id, channel, user_message,
+        intent, complexity, suggested_model, selected_skill, personality_level,
+        include_bio, bio_sections, context_summary, system_prompt, messages_json,
+        estimated_tokens, response_text, actual_model, tokens_in, tokens_out,
+        cost_cents, tokens_saved, duration_ms, success, error_message, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      log.id, log.userId, log.conversationId, log.channel, log.userMessage,
+      log.intent, log.complexity, log.suggestedModel, log.selectedSkill, log.personalityLevel,
+      log.includeBio ? 1 : 0, JSON.stringify(log.bioSections), log.contextSummary,
+      log.systemPrompt, log.messagesJson, log.estimatedTokens,
+      log.responseText, log.actualModel, log.tokensIn, log.tokensOut,
+      log.costCents, log.tokensSaved, log.durationMs, log.success ? 1 : 0,
+      log.errorMessage, now
+    );
+
+    return { ...log, createdAt: new Date(now) };
+  }
+
+  async getDebugLogs(filters?: { userId?: string; channel?: string; intent?: string; limit?: number; offset?: number }): Promise<DebugLog[]> {
+    let sql = 'SELECT * FROM debug_logs WHERE 1=1';
+    const params: any[] = [];
+
+    if (filters?.userId) { sql += ' AND user_id = ?'; params.push(filters.userId); }
+    if (filters?.channel) { sql += ' AND channel = ?'; params.push(filters.channel); }
+    if (filters?.intent) { sql += ' AND intent = ?'; params.push(filters.intent); }
+
+    sql += ' ORDER BY created_at DESC';
+    sql += ` LIMIT ? OFFSET ?`;
+    params.push(filters?.limit || 50, filters?.offset || 0);
+
+    const rows = this.db.prepare(sql).all(...params) as any[];
+    return rows.map(row => this.mapDebugLog(row));
+  }
+
+  async getDebugLog(id: string): Promise<DebugLog | null> {
+    const row = this.db.prepare('SELECT * FROM debug_logs WHERE id = ?').get(id) as any;
+    if (!row) return null;
+    return this.mapDebugLog(row);
+  }
+
+  async getDebugLogCount(filters?: { userId?: string; channel?: string; intent?: string }): Promise<number> {
+    let sql = 'SELECT COUNT(*) as count FROM debug_logs WHERE 1=1';
+    const params: any[] = [];
+
+    if (filters?.userId) { sql += ' AND user_id = ?'; params.push(filters.userId); }
+    if (filters?.channel) { sql += ' AND channel = ?'; params.push(filters.channel); }
+    if (filters?.intent) { sql += ' AND intent = ?'; params.push(filters.intent); }
+
+    const row = this.db.prepare(sql).get(...params) as any;
+    return row.count;
+  }
+
+  async deleteDebugLogsBefore(date: Date): Promise<number> {
+    const result = this.db.prepare('DELETE FROM debug_logs WHERE created_at < ?').run(date.toISOString());
+    return result.changes;
+  }
+
   // Mappers
   private mapUser(row: any): User {
     return {
@@ -627,6 +721,37 @@ export class SQLiteDatabase implements IDatabase {
       sections: JSON.parse(row.sections || '{}'),
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
+    };
+  }
+
+  private mapDebugLog(row: any): DebugLog {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      conversationId: row.conversation_id,
+      channel: row.channel,
+      userMessage: row.user_message,
+      intent: row.intent,
+      complexity: row.complexity,
+      suggestedModel: row.suggested_model,
+      selectedSkill: row.selected_skill,
+      personalityLevel: row.personality_level,
+      includeBio: row.include_bio === 1,
+      bioSections: JSON.parse(row.bio_sections || '[]'),
+      contextSummary: row.context_summary,
+      systemPrompt: row.system_prompt,
+      messagesJson: row.messages_json,
+      estimatedTokens: row.estimated_tokens,
+      responseText: row.response_text,
+      actualModel: row.actual_model,
+      tokensIn: row.tokens_in,
+      tokensOut: row.tokens_out,
+      costCents: row.cost_cents,
+      tokensSaved: row.tokens_saved,
+      durationMs: row.duration_ms,
+      success: row.success === 1,
+      errorMessage: row.error_message,
+      createdAt: new Date(row.created_at)
     };
   }
 }

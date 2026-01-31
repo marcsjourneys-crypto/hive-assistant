@@ -4,7 +4,7 @@ import { getConfig, getApiKey } from '../utils/config';
 export interface RoutingDecision {
   selectedSkill: string | null;
   contextSummary: string | null;
-  intent: 'task_query' | 'file_operation' | 'conversation' | 'creative' | 'code' | 'analysis' | 'greeting' | 'briefing';
+  intent: 'task_query' | 'file_operation' | 'conversation' | 'creative' | 'code' | 'analysis' | 'greeting' | 'briefing' | 'personal';
   complexity: 'simple' | 'medium' | 'complex';
   suggestedModel: 'haiku' | 'sonnet' | 'opus';
   includePersonality: boolean;
@@ -176,13 +176,14 @@ Respond with this exact JSON structure:
 {
   "selectedSkill": "skill-name or null if no skill needed",
   "contextSummary": "2-3 sentence summary of relevant context from history, or null if no relevant history",
-  "intent": "task_query|file_operation|conversation|creative|code|analysis|greeting|briefing",
+  "intent": "task_query|file_operation|conversation|creative|code|analysis|greeting|briefing|personal",
   "complexity": "simple|medium|complex",
   "suggestedModel": "haiku|sonnet|opus"
 }
 
 Guidelines:
 - greeting/conversation → haiku
+- personal (questions about the user, preferences, "what do you know about me") → haiku
 - simple queries, task lookups → haiku
 - code generation, analysis, complex reasoning → sonnet
 - critical decisions, long documents, creative writing → opus
@@ -211,7 +212,13 @@ JSON only, no explanation:`;
         personalityLevel = 'full';
         includeBio = false;
         break;
-        
+
+      case 'personal':
+        personalityLevel = 'full';
+        includeBio = true;
+        bioSections = [];  // Include full bio
+        break;
+
       case 'briefing':
         personalityLevel = 'minimal';
         includeBio = true;
@@ -263,9 +270,24 @@ JSON only, no explanation:`;
     
     // Simple heuristics for common cases
     const isGreeting = /^(hi|hello|hey|good morning|good evening|morning|evening)/i.test(lowerMessage);
+    const isPersonal = /\b(about me|my name|my profile|who am i|what do you know|my preferences|my timezone|my bio)\b/i.test(lowerMessage);
     const isBriefing = /briefing|summary|today|tasks|schedule/i.test(lowerMessage);
     const isCode = /code|function|script|debug|error|programming/i.test(lowerMessage);
-    
+
+    if (isPersonal) {
+      return {
+        selectedSkill: null,
+        contextSummary: null,
+        intent: 'personal',
+        complexity: 'simple',
+        suggestedModel: 'haiku',
+        includePersonality: true,
+        personalityLevel: 'full',
+        includeBio: true,
+        bioSections: []
+      };
+    }
+
     if (isGreeting) {
       return {
         selectedSkill: null,

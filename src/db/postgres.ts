@@ -1,4 +1,4 @@
-import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile } from './interface';
+import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog } from './interface';
 
 /**
  * PostgreSQL database implementation - placeholder.
@@ -43,4 +43,9 @@ export class PostgresDatabase implements IDatabase {
   async saveUserSoul(_userId: string, _soul: Omit<UserSoul, 'userId' | 'createdAt' | 'updatedAt'>): Promise<UserSoul> { throw new Error('Not implemented'); }
   async getUserProfile(_userId: string): Promise<UserProfile | null> { throw new Error('Not implemented'); }
   async saveUserProfile(_userId: string, _profile: Omit<UserProfile, 'userId' | 'createdAt' | 'updatedAt'>): Promise<UserProfile> { throw new Error('Not implemented'); }
+  async saveDebugLog(_log: Omit<DebugLog, 'createdAt'>): Promise<DebugLog> { throw new Error('Not implemented'); }
+  async getDebugLogs(_filters?: { userId?: string; channel?: string; intent?: string; limit?: number; offset?: number }): Promise<DebugLog[]> { throw new Error('Not implemented'); }
+  async getDebugLog(_id: string): Promise<DebugLog | null> { throw new Error('Not implemented'); }
+  async getDebugLogCount(_filters?: { userId?: string; channel?: string; intent?: string }): Promise<number> { throw new Error('Not implemented'); }
+  async deleteDebugLogsBefore(_date: Date): Promise<number> { throw new Error('Not implemented'); }
 }

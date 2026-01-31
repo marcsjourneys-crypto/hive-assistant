@@ -127,6 +127,22 @@ ${soul.traits.map(t => `- ${t}`).join('\n')}`;
   }
 
   /**
+   * Get a minimal identity prompt (name + timezone) for a specific user.
+   * Always injected regardless of orchestrator routing to ensure the assistant
+   * knows who it's talking to.
+   */
+  async getBasicIdentityForUser(userId: string): Promise<string> {
+    const profile = await this.getProfileConfig(userId);
+    const name = profile.preferredName || profile.name;
+    if (!name) return '';
+    let prompt = `The user's name is ${name}.`;
+    if (profile.timezone) {
+      prompt += ` Their timezone is ${profile.timezone}.`;
+    }
+    return prompt;
+  }
+
+  /**
    * Generate the profile prompt for a specific user.
    * Used by the gateway when building context.
    */
