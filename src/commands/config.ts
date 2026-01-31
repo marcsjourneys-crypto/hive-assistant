@@ -92,9 +92,22 @@ async function handleEdit(): Promise<void> {
     default: config.orchestrator.fallback || 'none'
   }]);
 
+  const { webPort } = await inquirer.prompt([{
+    type: 'input',
+    name: 'webPort',
+    message: 'Web dashboard port:',
+    default: String(config.web?.port || 3000),
+    validate: (input: string) => {
+      const port = parseInt(input, 10);
+      if (isNaN(port) || port < 1 || port > 65535) return 'Enter a valid port (1-65535)';
+      return true;
+    }
+  }]);
+
   setConfigValue('ai.executor.default', model);
   setConfigValue('orchestrator.provider', orchestrator);
   setConfigValue('orchestrator.fallback', fallback === 'none' ? null : fallback);
+  setConfigValue('web.port', parseInt(webPort, 10));
 
   console.log(chalk.green('\nConfiguration updated.'));
 }
@@ -124,6 +137,14 @@ async function handleShow(): Promise<void> {
   console.log(`  WhatsApp: ${config.channels.whatsapp.enabled ? chalk.green('enabled') : chalk.gray('disabled')}`);
   console.log(`  Telegram: ${config.channels.telegram.enabled ? chalk.green('enabled') : chalk.gray('disabled')}`);
 
+  console.log(chalk.bold('\nWeb Dashboard'));
+  if (config.web) {
+    console.log(`  Enabled: ${config.web.enabled ? chalk.green('yes') : chalk.gray('no')}`);
+    console.log(`  URL:     http://${config.web.host || '0.0.0.0'}:${config.web.port || 3000}`);
+  } else {
+    console.log(`  ${chalk.gray('Not configured')}`);
+  }
+
   console.log(chalk.bold('\nUser'));
   console.log(`  Name:     ${config.user.name || 'Not set'}`);
   console.log(`  Timezone: ${config.user.timezone}`);
@@ -131,7 +152,9 @@ async function handleShow(): Promise<void> {
   console.log(chalk.bold('\nPaths'));
   console.log(`  Data:      ${config.dataDir}`);
   console.log(`  Workspace: ${config.workspace}`);
-  console.log('');
+
+  console.log(chalk.gray('\nTip: Use `hive config set <key> <value>` to change settings.'));
+  console.log(chalk.gray('Example: hive config set web.port 8080\n'));
 }
 
 function maskSecret(value: string): string {

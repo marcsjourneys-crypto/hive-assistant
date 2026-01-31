@@ -6,6 +6,7 @@ import makeWASocket, {
   proto
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
+import pino from 'pino';
 import * as qrcode from 'qrcode-terminal';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -18,6 +19,15 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_BASE_DELAY_MS = 2000;
 
 /**
+ * Create a pino logger for Baileys that suppresses noisy Signal session errors.
+ * These "Bad MAC" / "No matching sessions" errors occur when Baileys tries to
+ * decrypt its own sent message echoes via LID — they're non-fatal and just noise.
+ */
+function createBaileysLogger() {
+  return pino({ level: 'warn' });
+}
+
+/**
  * WhatsApp channel using Baileys.
  * Connects to WhatsApp Web, displays QR for linking,
  * and routes incoming messages through the gateway.
@@ -28,6 +38,7 @@ export class WhatsAppChannel {
   private running = false;
   private conversations: Map<string, string> = new Map();
   private sentMessageIds: Set<string> = new Set();
+  private sentMessages: Map<string, proto.IMessage> = new Map();
   private reconnectAttempts = 0;
   private credentialsPath: string;
   private ownerJid: string | null = null;
@@ -79,12 +90,20 @@ export class WhatsAppChannel {
 
     this.sock = makeWASocket({
       auth: state,
+      logger: createBaileysLogger(),
       printQRInTerminal: false,
       browser: ['Hive Assistant', 'Chrome', '120.0.0'],
       version,
       connectTimeoutMs: 30_000,
       defaultQueryTimeoutMs: 30_000,
       qrTimeout: 60_000,
+      getMessage: async (key) => {
+        // Return stored sent message content so Baileys can handle retry requests
+        if (key.id && this.sentMessages.has(key.id)) {
+          return this.sentMessages.get(key.id);
+        }
+        return undefined;
+      },
     });
 
     // Persist auth state changes
@@ -148,6 +167,7 @@ export class WhatsAppChannel {
         // Skip messages that the assistant sent (prevents infinite loop)
         if (msg.key.fromMe && msg.key.id && this.sentMessageIds.has(msg.key.id)) {
           this.sentMessageIds.delete(msg.key.id);
+          this.sentMessages.delete(msg.key.id);
           continue;
         }
 
@@ -200,6 +220,10 @@ export class WhatsAppChannel {
         const sent = await this.sock.sendMessage(replyJid, { text: result.response });
         if (sent?.key?.id) {
           this.sentMessageIds.add(sent.key.id);
+          // Store message content for retry/re-encryption support
+          if (sent.message) {
+            this.sentMessages.set(sent.key.id, sent.message);
+          }
         }
       }
 
@@ -215,6 +239,9 @@ export class WhatsAppChannel {
         }).catch(() => undefined);
         if (sent?.key?.id) {
           this.sentMessageIds.add(sent.key.id);
+          if (sent.message) {
+            this.sentMessages.set(sent.key.id, sent.message);
+          }
         }
       }
     }

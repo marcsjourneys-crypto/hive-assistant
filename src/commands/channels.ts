@@ -89,19 +89,69 @@ async function loginWhatsApp(): Promise<void> {
 
   // Ask for phone number (needed to send self-chat replies via phone JID, not LID)
   console.log(chalk.gray('\nYour phone number is needed so the assistant can reply to you.'));
-  console.log(chalk.gray('Enter it with country code, digits only (e.g., 13604015688).\n'));
+  console.log(chalk.cyan('  IMPORTANT: Include your country code!'));
+  console.log(chalk.gray('  US/Canada: 1, UK: 44, AU: 61, IN: 91, etc.'));
+  console.log(chalk.gray('  Example: 13604015688 (1 = US, then your 10-digit number)\n'));
 
   const { number } = await inquirer.prompt([{
     type: 'input',
     name: 'number',
-    message: 'Your WhatsApp phone number:',
+    message: 'Your WhatsApp phone number (with country code):',
     validate: (input: string) => {
       const digits = input.replace(/\D/g, '');
-      if (digits.length < 7 || digits.length > 15) return 'Enter a valid phone number with country code';
+      if (digits.length < 10 || digits.length > 15) {
+        return 'Enter a valid phone number with country code (10-15 digits)';
+      }
       return true;
     },
     filter: (input: string) => input.replace(/\D/g, '')
   }]);
+
+  // Detect likely missing US/Canada country code
+  const isLikelyNANP = number.length === 10 && /^[2-9]/.test(number);
+  if (isLikelyNANP) {
+    console.log(chalk.yellow(`\n  Warning: "${number}" looks like a US/Canada number without the country code "1".`));
+    console.log(chalk.yellow(`  The full number should be "1${number}".`));
+
+    const { fix } = await inquirer.prompt([{
+      type: 'list',
+      name: 'fix',
+      message: 'What would you like to do?',
+      choices: [
+        { name: `Use 1${number} (add US/Canada country code)`, value: 'add' },
+        { name: `Use ${number} as-is (different country)`, value: 'keep' },
+        { name: 'Re-enter the number', value: 'retry' }
+      ]
+    }]);
+
+    if (fix === 'retry') {
+      return loginWhatsApp();
+    }
+
+    const finalNumber = fix === 'add' ? `1${number}` : number;
+    console.log(chalk.gray(`\n  Using: +${finalNumber}`));
+
+    setConfigValue('channels.whatsapp.number', finalNumber);
+    setConfigValue('channels.whatsapp.enabled', true);
+
+    console.log(chalk.green('\nWhatsApp channel enabled.'));
+    console.log(chalk.gray('A QR code will appear when you run `hive start`.'));
+    console.log(chalk.gray('Scan it with WhatsApp to link your account.\n'));
+    return;
+  }
+
+  // Confirm the number for all other cases
+  console.log(chalk.gray(`\n  Number entered: +${number}`));
+  const { confirmed } = await inquirer.prompt([{
+    type: 'confirm',
+    name: 'confirmed',
+    message: 'Is this correct (with country code)?',
+    default: true
+  }]);
+
+  if (!confirmed) {
+    return loginWhatsApp();
+  }
 
   setConfigValue('channels.whatsapp.number', number);
   setConfigValue('channels.whatsapp.enabled', true);
