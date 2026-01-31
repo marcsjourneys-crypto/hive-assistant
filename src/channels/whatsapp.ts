@@ -40,6 +40,15 @@ export class WhatsAppChannel {
   async start(): Promise<void> {
     this.running = true;
 
+    // Clean up any existing socket before creating a new one (important for reconnects)
+    if (this.sock) {
+      this.sock.ev.removeAllListeners('creds.update');
+      this.sock.ev.removeAllListeners('connection.update');
+      this.sock.ev.removeAllListeners('messages.upsert');
+      this.sock.end(undefined);
+      this.sock = null;
+    }
+
     // Ensure credentials directory exists
     if (!fs.existsSync(this.credentialsPath)) {
       fs.mkdirSync(this.credentialsPath, { recursive: true });
@@ -49,7 +58,11 @@ export class WhatsAppChannel {
 
     this.sock = makeWASocket({
       auth: state,
-      printQRInTerminal: false
+      printQRInTerminal: false,
+      browser: ['Hive Assistant', 'Chrome', '120.0.0'],
+      connectTimeoutMs: 30_000,
+      defaultQueryTimeoutMs: 30_000,
+      qrTimeout: 60_000,
     });
 
     // Persist auth state changes
@@ -60,8 +73,12 @@ export class WhatsAppChannel {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
-        console.log(chalk.cyan('\nScan this QR code with WhatsApp:\n'));
+        console.log(chalk.cyan('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+        console.log(chalk.cyan('  Scan this QR code with WhatsApp:'));
+        console.log(chalk.cyan('  (Phone > Settings > Linked Devices > Link a Device)'));
+        console.log(chalk.cyan('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'));
         qrcode.generate(qr, { small: true });
+        console.log('');
       }
 
       if (connection === 'close') {
@@ -94,7 +111,7 @@ export class WhatsAppChannel {
 
       if (connection === 'open') {
         this.reconnectAttempts = 0;
-        console.log(chalk.green('WhatsApp connected.'));
+        console.log(chalk.green('WhatsApp connected successfully!'));
       }
     });
 
