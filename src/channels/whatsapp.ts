@@ -26,6 +26,7 @@ export class WhatsAppChannel {
   private sock: WASocket | null = null;
   private running = false;
   private conversations: Map<string, string> = new Map();
+  private sentMessageIds: Set<string> = new Set();
   private reconnectAttempts = 0;
   private credentialsPath: string;
 
@@ -132,13 +133,20 @@ export class WhatsAppChannel {
       if (m.type !== 'notify') return;
 
       for (const msg of m.messages) {
-        if (msg.key.fromMe) continue;
-
         const jid = msg.key.remoteJid;
         if (!jid) continue;
 
+        // Skip messages that the assistant sent (prevents infinite loop)
+        if (msg.key.fromMe && msg.key.id && this.sentMessageIds.has(msg.key.id)) {
+          this.sentMessageIds.delete(msg.key.id);
+          continue;
+        }
+
         // Skip group messages for now
         if (jid.endsWith('@g.us')) continue;
+
+        // Skip status broadcasts
+        if (jid === 'status@broadcast') continue;
 
         const text = this.extractText(msg);
         if (!text) continue;
@@ -175,9 +183,12 @@ export class WhatsAppChannel {
       const result = await this.gateway.handleMessage(userId, text, 'whatsapp', conversationId);
       this.conversations.set(userId, result.conversationId);
 
-      // Send response
+      // Send response and track its ID to avoid re-processing our own reply
       if (this.sock) {
-        await this.sock.sendMessage(jid, { text: result.response });
+        const sent = await this.sock.sendMessage(jid, { text: result.response });
+        if (sent?.key?.id) {
+          this.sentMessageIds.add(sent.key.id);
+        }
       }
 
       if (process.env.HIVE_LOG_LEVEL === 'debug') {
@@ -192,9 +203,12 @@ export class WhatsAppChannel {
 
       // Try to send error message to user
       if (this.sock) {
-        await this.sock.sendMessage(jid, {
+        const sent = await this.sock.sendMessage(jid, {
           text: 'Sorry, something went wrong processing your message. Please try again.'
-        }).catch(() => {});
+        }).catch(() => undefined);
+        if (sent?.key?.id) {
+          this.sentMessageIds.add(sent.key.id);
+        }
       }
     }
   }
