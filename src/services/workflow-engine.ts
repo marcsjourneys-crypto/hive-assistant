@@ -292,11 +292,6 @@ export class WorkflowEngine {
       message = `Process the following data:\n\n${allInputs}`;
     }
 
-    // Instruct the model to preserve all data fields in its response
-    message += '\n\nIMPORTANT: Include ALL data fields from the input in your response — ' +
-      'especially dates, timestamps, IDs, and numerical values. ' +
-      'Do not omit or paraphrase any data points.';
-
     const result = await this.gateway.handleMessage(
       userId,
       message,
