@@ -341,6 +341,45 @@ export class WorkflowEngine {
 
     await this.notificationSender.send(channel, recipient, message);
 
+    // Save notification to user's conversation so follow-up questions have context
+    await this.saveNotificationToConversation(userId, message, channel);
+
     return { sent: true, channel, recipient: recipient.slice(0, 4) + '...' };
+  }
+
+  /**
+   * Save a workflow notification as an assistant message in the user's conversation.
+   * This lets follow-up questions ("when was the urgent task created?") work naturally.
+   * Non-critical: errors are caught so notifications still succeed even if save fails.
+   */
+  private async saveNotificationToConversation(
+    userId: string,
+    message: string,
+    channel: string
+  ): Promise<void> {
+    try {
+      const conversations = await this.db.getConversations(userId, 1);
+      let convId: string;
+
+      if (conversations.length > 0) {
+        convId = conversations[0].id;
+      } else {
+        const conv = await this.db.createConversation({
+          id: uuidv4(),
+          userId,
+          title: 'Conversation'
+        });
+        convId = conv.id;
+      }
+
+      await this.db.addMessage({
+        id: uuidv4(),
+        conversationId: convId,
+        role: 'assistant',
+        content: `[Sent via ${channel} notification]\n\n${message}`
+      });
+    } catch {
+      // Non-critical: don't fail the workflow if conversation save fails
+    }
   }
 }
