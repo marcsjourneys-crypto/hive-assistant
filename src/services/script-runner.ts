@@ -14,6 +14,8 @@ export interface ScriptResult {
 
 export interface ScriptRunOptions {
   timeoutMs?: number;
+  /** Working directory for the script process. Defaults to the temp run directory. */
+  cwd?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -66,7 +68,8 @@ export class ScriptRunner {
 
       // Spawn python process
       const timeout = options?.timeoutMs || DEFAULT_TIMEOUT_MS;
-      const result = await this.spawnPython(scriptPath, inputPath, outputPath, timeout);
+      const cwd = options?.cwd || path.dirname(scriptPath);
+      const result = await this.spawnPython(scriptPath, inputPath, outputPath, timeout, cwd);
 
       if (!result.success) {
         return {
@@ -125,12 +128,13 @@ export class ScriptRunner {
     scriptPath: string,
     inputPath: string,
     outputPath: string,
-    timeoutMs: number
+    timeoutMs: number,
+    cwd: string
   ): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
       const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
       const proc = spawn(pythonCmd, [RUNNER_PY, scriptPath, inputPath, outputPath], {
-        cwd: path.dirname(scriptPath),
+        cwd,
         timeout: timeoutMs,
         stdio: ['ignore', 'pipe', 'pipe']
       });

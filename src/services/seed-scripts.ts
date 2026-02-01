@@ -5,19 +5,15 @@ const SYSTEM_USER_ID = 'system';
 
 const CSV_DIFF_SOURCE = `
 import csv
-import json
-import sys
 from io import StringIO
 
-def main():
-    input_data = json.loads(sys.stdin.read())
-    file_path = input_data.get("file_path", "")
-    prev_file_path = input_data.get("prev_file_path", "")
-    key_column = input_data.get("key_column", "")
+def run(inputs):
+    file_path = inputs.get("file_path", "")
+    prev_file_path = inputs.get("prev_file_path", "")
+    key_column = inputs.get("key_column", "")
 
     if not file_path or not prev_file_path:
-        print(json.dumps({"error": "file_path and prev_file_path are required"}))
-        return
+        return {"error": "file_path and prev_file_path are required"}
 
     try:
         with open(file_path, "r", encoding="utf-8-sig") as f:
@@ -25,17 +21,15 @@ def main():
         with open(prev_file_path, "r", encoding="utf-8-sig") as f:
             old_rows = list(csv.DictReader(f))
     except FileNotFoundError as e:
-        print(json.dumps({"error": str(e)}))
-        return
+        return {"error": str(e)}
 
     if not new_rows and not old_rows:
-        print(json.dumps({
+        return {
             "has_changes": False,
             "summary": "Both files are empty.",
             "added_rows": [], "removed_rows": [], "changed_rows": [],
             "stats": {"added": 0, "removed": 0, "changed": 0, "unchanged": 0}
-        }))
-        return
+        }
 
     added = []
     removed = []
@@ -101,7 +95,7 @@ def main():
 
     summary = "No changes detected." if not has_changes else "Changes: " + ", ".join(parts) + "."
 
-    print(json.dumps({
+    return {
         "has_changes": has_changes,
         "summary": summary,
         "added_rows": added[:50],
@@ -113,10 +107,7 @@ def main():
             "changed": len(changed),
             "unchanged": unchanged
         }
-    }))
-
-if __name__ == "__main__":
-    main()
+    }
 `.trim();
 
 /**
@@ -124,43 +115,49 @@ if __name__ == "__main__":
  * Called once at startup.
  */
 export async function seedBuiltinScripts(db: IDatabase): Promise<void> {
-  // Check if csv-diff already exists (by name, shared)
-  const existing = await db.getScripts(SYSTEM_USER_ID);
-  const hasCsvDiff = existing.some(s => s.name === 'csv-diff' && s.isShared);
-  if (hasCsvDiff) return;
-
   // Ensure system user exists
   const sysUser = await db.getUser(SYSTEM_USER_ID);
   if (!sysUser) {
     await db.createUser({ id: SYSTEM_USER_ID, config: {} });
   }
 
-  await db.createScript({
-    id: uuidv4(),
-    ownerId: SYSTEM_USER_ID,
-    name: 'csv-diff',
-    description: 'Compare two CSV files and report added, removed, and changed rows. Supports key-column matching or positional comparison.',
-    language: 'python',
-    sourceCode: CSV_DIFF_SOURCE,
-    inputSchema: {
-      file_path: 'string',
-      prev_file_path: 'string',
-      key_column: 'string (optional)'
-    },
-    outputSchema: {
-      has_changes: 'boolean',
-      summary: 'string',
-      added_rows: 'list of row objects',
-      removed_rows: 'list of row objects',
-      changed_rows: 'list of {key, changes}',
-      stats: '{added, removed, changed, unchanged}'
-    },
-    isConnector: false,
-    isShared: true,
-    approved: true
-  });
+  // Check if csv-diff already exists (by name, shared)
+  const existing = await db.getScripts(SYSTEM_USER_ID);
+  const csvDiff = existing.find(s => s.name === 'csv-diff' && s.isShared);
 
-  console.log('  [Seed] csv-diff script created');
+  if (csvDiff) {
+    // Update source code if it has changed (e.g., fixing run() contract)
+    if (csvDiff.sourceCode !== CSV_DIFF_SOURCE) {
+      await db.updateScript(csvDiff.id, { sourceCode: CSV_DIFF_SOURCE });
+      console.log('  [Seed] csv-diff script updated');
+    }
+  } else {
+    await db.createScript({
+      id: uuidv4(),
+      ownerId: SYSTEM_USER_ID,
+      name: 'csv-diff',
+      description: 'Compare two CSV files and report added, removed, and changed rows. Supports key-column matching or positional comparison.',
+      language: 'python',
+      sourceCode: CSV_DIFF_SOURCE,
+      inputSchema: {
+        file_path: 'string',
+        prev_file_path: 'string',
+        key_column: 'string (optional)'
+      },
+      outputSchema: {
+        has_changes: 'boolean',
+        summary: 'string',
+        added_rows: 'list of row objects',
+        removed_rows: 'list of row objects',
+        changed_rows: 'list of {key, changes}',
+        stats: '{added, removed, changed, unchanged}'
+      },
+      isConnector: false,
+      isShared: true,
+      approved: true
+    });
+    console.log('  [Seed] csv-diff script created');
+  }
 
   // Seed the CSV Change Monitor workflow template
   await seedCsvChangeMonitorTemplate(db);

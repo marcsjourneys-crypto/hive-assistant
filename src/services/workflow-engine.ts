@@ -1,9 +1,11 @@
+import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { Database } from '../db/interface';
 import { ScriptRunner } from './script-runner';
 import { CredentialVault } from './credential-vault';
 import { NotificationSender } from './notification-sender';
 import { Gateway } from '../core/gateway';
+import { getUserWorkspacePath } from '../utils/user-workspace';
 
 /** Input mapping for a workflow step. */
 export interface InputMapping {
@@ -99,7 +101,7 @@ export class WorkflowEngine {
         let output: unknown;
 
         if (step.type === 'script') {
-          output = await this.executeScriptStep(step, resolvedInputs);
+          output = await this.executeScriptStep(step, resolvedInputs, userId);
         } else if (step.type === 'skill') {
           output = await this.executeSkillStep(step, resolvedInputs, userId);
         } else if (step.type === 'notify') {
@@ -245,10 +247,13 @@ export class WorkflowEngine {
 
   /**
    * Execute a script step via ScriptRunner.
+   * Sets the working directory to the user's files directory so
+   * scripts can access files by name (e.g., "TC26.extracted.csv").
    */
   private async executeScriptStep(
     step: StepDefinition,
-    inputs: Record<string, unknown>
+    inputs: Record<string, unknown>,
+    userId: string
   ): Promise<unknown> {
     if (!step.scriptId) {
       throw new Error(`Script step "${step.id}" is missing scriptId`);
@@ -259,7 +264,12 @@ export class WorkflowEngine {
       throw new Error(`Script "${step.scriptId}" not found`);
     }
 
-    const result = await this.scriptRunner.execute(script.sourceCode, inputs);
+    // Run the script with the user's files directory as CWD
+    // so file_path inputs like "TC26.extracted.csv" resolve correctly.
+    const userFilesDir = path.join(getUserWorkspacePath(userId), 'files');
+    const result = await this.scriptRunner.execute(script.sourceCode, inputs, {
+      cwd: userFilesDir
+    });
 
     if (!result.success) {
       throw new Error(result.error || 'Script execution failed');
