@@ -153,6 +153,32 @@ export class Gateway {
       // confirmResult is null → confirmation expired, proceed with normal flow
     }
 
+    // 5c. Pre-routing keyword check for workflow commands.
+    //     The small orchestrator model doesn't always classify listing/trigger
+    //     phrases correctly (e.g. "can you tell me what workflows I have?").
+    //     Catch these locally before calling the orchestrator at all.
+    if (this.workflowTrigger && this.isWorkflowMessage(message)) {
+      console.log(`  [gateway] Pre-routing: detected workflow message, skipping orchestrator`);
+      const triggerResult = await this.workflowTrigger.handleWorkflowTrigger(userId, message);
+      await this.db.addMessage({
+        id: uuidv4(),
+        conversationId: convId,
+        role: 'assistant',
+        content: triggerResult.message
+      });
+      const workflowRouting: RoutingDecision = {
+        selectedSkill: null, contextSummary: null, intent: 'workflow_trigger',
+        complexity: 'simple', suggestedModel: 'haiku', includePersonality: false,
+        personalityLevel: 'none', includeBio: false, bioSections: []
+      };
+      return {
+        response: triggerResult.message,
+        conversationId: convId,
+        routing: workflowRouting,
+        usage: { model: 'none', tokensIn: 0, tokensOut: 0, costCents: 0, estimatedTokensSaved: 0 }
+      };
+    }
+
     // 6. Route through orchestrator
     const debug = process.env.HIVE_LOG_LEVEL === 'debug';
     if (debug) console.log(`  [gateway] Routing message for ${userId}...`);
@@ -456,6 +482,21 @@ export class Gateway {
       default:
         return (executor.default || 'sonnet') as ModelName;
     }
+  }
+
+  /**
+   * Check if a message is a workflow command (trigger or listing) using local
+   * keyword matching. This runs before the orchestrator so we don't depend on
+   * the small model to correctly classify every phrasing.
+   */
+  private isWorkflowMessage(message: string): boolean {
+    const lower = message.toLowerCase();
+    // Trigger patterns: "run my morning brief", "execute the backup workflow"
+    const isTrigger = /\b(run|execute|trigger|start|launch)\b.*\b(workflow|brief|report|routine|automation)\b/i.test(lower);
+    // Listing patterns: "what workflows do I have", "list my automations", "show workflows"
+    const isListing = /\b(list|show|what|which|tell me|do i have|available)\b.*\b(workflow|automation|routine)s?\b/i.test(lower)
+      || /\b(workflow|automation|routine)s?\b.*\b(list|available|set up|configured|do i have|exist)\b/i.test(lower);
+    return isTrigger || isListing;
   }
 
   /**
