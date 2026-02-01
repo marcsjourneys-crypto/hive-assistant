@@ -3,6 +3,7 @@ import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { Database as IDatabase } from '../../db/interface';
 import { requireAuth, generateToken, setAuthCookie } from '../middleware/auth';
+import { ensureUserWorkspace } from '../../utils/user-workspace';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -46,6 +47,9 @@ export function createAuthRoutes(db: IDatabase): Router {
       // Create user record
       const userId = uuidv4();
       await db.createUser({ id: userId, email, config: {} });
+
+      // Create workspace directories for the new user
+      await ensureUserWorkspace(userId);
 
       // Create auth record
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);

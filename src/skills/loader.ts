@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'yaml';
+import { safePath } from '../utils/path-safety';
 
 const HIVE_DIR = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.hive');
 
@@ -47,10 +48,13 @@ export function loadSkillsMeta(workspacePath: string): SkillMeta[] {
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
 
-      const skillFile = path.join(dir, entry.name, 'SKILL.md');
-      if (!fs.existsSync(skillFile)) continue;
+      // Validate path stays within the skills directory
+      const validated = safePath(dir, path.join(entry.name, 'SKILL.md'));
+      if (!validated) continue;
 
-      const meta = parseSkillMeta(skillFile);
+      if (!fs.existsSync(validated)) continue;
+
+      const meta = parseSkillMeta(validated);
       if (meta && !seen.has(meta.name)) {
         seen.add(meta.name);
         skills.push(meta);
@@ -115,7 +119,7 @@ export function findAndLoadSkill(skillName: string, workspacePath: string): Skil
 /**
  * Parse just the metadata from a SKILL.md file.
  */
-function parseSkillMeta(skillPath: string): SkillMeta | null {
+export function parseSkillMeta(skillPath: string): SkillMeta | null {
   try {
     const raw = fs.readFileSync(skillPath, 'utf-8');
     const match = raw.match(/^---\n([\s\S]*?)\n---/);

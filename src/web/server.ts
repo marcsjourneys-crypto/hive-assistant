@@ -15,12 +15,14 @@ import { createAdminRoutes } from './routes/admin';
 import { createLogsRoutes } from './routes/logs';
 import { createChatRoutes } from './routes/chat';
 import { Gateway } from '../core/gateway';
+import { SkillResolver } from '../services/skill-resolver';
 
 export interface WebServerConfig {
   db: IDatabase;
   port: number;
   host: string;
   gateway?: Gateway;
+  skillResolver?: SkillResolver;
 }
 
 /**
@@ -41,7 +43,7 @@ export function createWebServer(config: WebServerConfig): express.Express {
   app.use('/api/auth', createAuthRoutes(db));
   app.use('/api/soul', createSoulRoutes(db, userSettings));
   app.use('/api/profile', createProfileRoutes(db, userSettings));
-  app.use('/api/skills', createSkillsRoutes(db));
+  app.use('/api/skills', createSkillsRoutes(db, config.skillResolver));
   app.use('/api/usage', createUsageRoutes(db));
   app.use('/api/channels', createChannelsRoutes());
   app.use('/api/admin', createAdminRoutes(db));

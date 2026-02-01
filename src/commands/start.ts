@@ -14,6 +14,8 @@ import { TelegramChannel } from '../channels/telegram';
 import { loadSoul } from '../core/soul';
 import { createWebServer } from '../web/server';
 import { UserSettingsService } from '../services/user-settings';
+import { SkillResolver } from '../services/skill-resolver';
+import { FileAccessService } from '../services/file-access';
 
 interface StartOptions {
   daemon?: boolean;
@@ -92,7 +94,13 @@ export async function startCommand(options: StartOptions): Promise<void> {
     // 6. Create user settings service (for per-user soul/profile)
     const userSettings = new UserSettingsService(db);
 
-    // 7. Create gateway
+    // 7. Create skill resolver (per-user skill resolution)
+    const skillResolver = new SkillResolver(db, path.join(config.dataDir, 'skills'));
+
+    // 7b. Create file access service (sandboxed per-user file reading)
+    const fileAccess = new FileAccessService();
+
+    // 8. Create gateway
     const gateway = new Gateway({
       db,
       orchestrator,
@@ -100,7 +108,9 @@ export async function startCommand(options: StartOptions): Promise<void> {
       workspacePath: config.workspace,
       defaultUserId: 'cli-user',
       summarizer,
-      userSettings
+      userSettings,
+      skillResolver,
+      fileAccess
     });
 
     spinner.succeed('Hive is ready!');
@@ -150,7 +160,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
     if (config.web?.enabled) {
       const webPort = config.web.port || 3000;
       const webHost = config.web.host || '0.0.0.0';
-      const app = createWebServer({ db, port: webPort, host: webHost, gateway });
+      const app = createWebServer({ db, port: webPort, host: webHost, gateway, skillResolver });
       webServer = app.listen(webPort, webHost, () => {
         console.log(chalk.green(`  Web dashboard: http://${webHost === '0.0.0.0' ? 'localhost' : webHost}:${webPort}`));
       });

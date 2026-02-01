@@ -6,7 +6,10 @@ import { Summarizer } from './summarizer';
 import { buildContext, UserPromptOverrides } from './context-builder';
 import { loadSkillsMeta, findAndLoadSkill, SkillMeta } from '../skills/loader';
 import { UserSettingsService } from '../services/user-settings';
+import { SkillResolver } from '../services/skill-resolver';
 import { getConfig } from '../utils/config';
+import { ensureUserWorkspace } from '../utils/user-workspace';
+import { FileAccessService } from '../services/file-access';
 
 /** Configuration for creating a Gateway instance. */
 export interface GatewayConfig {
@@ -17,6 +20,8 @@ export interface GatewayConfig {
   defaultUserId: string;
   summarizer?: Summarizer;
   userSettings?: UserSettingsService;
+  skillResolver?: SkillResolver;
+  fileAccess?: FileAccessService;
 }
 
 /** Result returned from handleMessage. */
@@ -46,6 +51,8 @@ export class Gateway {
   private defaultUserId: string;
   private summarizer?: Summarizer;
   private userSettings?: UserSettingsService;
+  private skillResolver?: SkillResolver;
+  private fileAccess?: FileAccessService;
   private skillsCache: SkillMeta[] | null = null;
 
   constructor(config: GatewayConfig) {
@@ -56,6 +63,8 @@ export class Gateway {
     this.defaultUserId = config.defaultUserId;
     this.summarizer = config.summarizer;
     this.userSettings = config.userSettings;
+    this.skillResolver = config.skillResolver;
+    this.fileAccess = config.fileAccess;
   }
 
   /**
@@ -94,8 +103,10 @@ export class Gateway {
       .slice(-10)
       .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-    // 5. Load available skills metadata
-    const skills = this.getSkillsMeta();
+    // 5. Load available skills metadata (per-user if resolver available)
+    const skills = this.skillResolver
+      ? await this.skillResolver.getSkillsForUser(userId)
+      : this.getSkillsMeta();
     const skillInfos: SkillInfo[] = skills.map(s => ({
       name: s.name,
       description: s.description
@@ -108,9 +119,11 @@ export class Gateway {
     const routing = await this.orchestrator.route(message, historyForOrchestrator, skillInfos);
     console.log(`  [gateway] Routed: intent=${routing.intent}, model=${routing.suggestedModel}`);
 
-    // 7. Load selected skill if orchestrator chose one
+    // 7. Load selected skill if orchestrator chose one (per-user if resolver available)
     const skill = routing.selectedSkill
-      ? findAndLoadSkill(routing.selectedSkill, this.workspacePath)
+      ? (this.skillResolver
+          ? await this.skillResolver.findAndLoadSkillForUser(userId, routing.selectedSkill)
+          : findAndLoadSkill(routing.selectedSkill, this.workspacePath))
       : null;
 
     // 7b. Inject DB summary if orchestrator didn't provide one
@@ -135,6 +148,22 @@ export class Gateway {
           : Promise.resolve(undefined)
       ]);
       overrides = { soulPrompt, basicIdentity, profilePrompt };
+    }
+
+    // 8b. Inject file listing for file_operation intents
+    if (this.fileAccess && routing.intent === 'file_operation') {
+      try {
+        const files = await this.fileAccess.listFiles(userId);
+        if (files.length > 0) {
+          const fileContext = `## User's Files\n${files.map(f =>
+            `- ${f.name} (${f.size} bytes, modified ${f.modified.toLocaleDateString()})`
+          ).join('\n')}`;
+          if (!overrides) overrides = {};
+          overrides.fileContext = fileContext;
+        }
+      } catch {
+        // Non-critical: skip file context if listing fails
+      }
     }
 
     // 9. Build context (exclude current message from history; buildContext adds it)
@@ -238,6 +267,7 @@ export class Gateway {
     if (!existing) {
       await this.db.createUser({ id: userId, config: {} });
     }
+    await ensureUserWorkspace(userId);
   }
 
   /**

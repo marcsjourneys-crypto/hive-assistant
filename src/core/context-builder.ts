@@ -15,6 +15,7 @@ export interface UserPromptOverrides {
   soulPrompt?: string;
   profilePrompt?: string;
   basicIdentity?: string;
+  fileContext?: string;
 }
 
 /** Maximum number of recent messages to include for context continuity. */
@@ -102,6 +103,11 @@ export function buildContext(
         parts.push(profilePrompt);
       }
     }
+  }
+
+  // User's file listing (when available)
+  if (overrides?.fileContext) {
+    parts.push(overrides.fileContext);
   }
 
   // Skill instructions
