@@ -75,6 +75,7 @@ export class JSONDatabase implements IDatabase {
   async getChannelIdentity(_id: string): Promise<ChannelIdentity | null> { throw new Error('Not implemented'); }
   async getChannelIdentities(_userId: string): Promise<ChannelIdentity[]> { throw new Error('Not implemented'); }
   async getChannelIdentitiesByChannel(_userId: string, _channel: string): Promise<ChannelIdentity[]> { throw new Error('Not implemented'); }
+  async findOwnerByChannelUserId(_channelUserId: string, _channel: string): Promise<string | null> { throw new Error('Not implemented'); }
   async createChannelIdentity(_identity: Omit<ChannelIdentity, 'createdAt' | 'updatedAt'>): Promise<ChannelIdentity> { throw new Error('Not implemented'); }
   async deleteChannelIdentity(_id: string): Promise<void> { throw new Error('Not implemented'); }
 }

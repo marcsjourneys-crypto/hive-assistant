@@ -280,6 +280,7 @@ export interface Database {
   getChannelIdentity(id: string): Promise<ChannelIdentity | null>;
   getChannelIdentities(userId: string): Promise<ChannelIdentity[]>;
   getChannelIdentitiesByChannel(userId: string, channel: string): Promise<ChannelIdentity[]>;
+  findOwnerByChannelUserId(channelUserId: string, channel: string): Promise<string | null>;
   createChannelIdentity(identity: Omit<ChannelIdentity, 'createdAt' | 'updatedAt'>): Promise<ChannelIdentity>;
   deleteChannelIdentity(id: string): Promise<void>;
 }

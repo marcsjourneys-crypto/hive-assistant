@@ -61,9 +61,12 @@ export class WorkflowTriggerService {
       if (confirmResult) return confirmResult;
     }
 
+    // Resolve channel userId (e.g. "tg:12345") to the workflow owner
+    const ownerId = await this.resolveOwnerId(userId);
+
     // Check if this is a listing request rather than a trigger
     if (this.isListingRequest(message)) {
-      return this.handleWorkflowList(userId);
+      return this.handleWorkflowList(ownerId);
     }
 
     const query = this.extractWorkflowName(message);
@@ -74,11 +77,11 @@ export class WorkflowTriggerService {
       };
     }
 
-    const matches = await this.findWorkflows(userId, query);
+    const matches = await this.findWorkflows(ownerId, query);
 
     if (matches.length === 0) {
       // Check if there's an inactive exact match
-      const allWorkflows = await this.db.getWorkflows(userId);
+      const allWorkflows = await this.db.getWorkflows(ownerId);
       const inactiveMatch = allWorkflows.find(
         w => !w.isActive && w.name.toLowerCase() === query.toLowerCase()
       );
@@ -103,7 +106,7 @@ export class WorkflowTriggerService {
 
     // Single exact match — execute immediately
     if (matches.length === 1 && matches[0].matchType === 'exact') {
-      return this.executeWorkflow(userId, matches[0].workflow);
+      return this.executeWorkflow(ownerId, matches[0].workflow);
     }
 
     // Single substring/fuzzy match — ask for confirmation
@@ -164,17 +167,19 @@ export class WorkflowTriggerService {
       };
     }
 
+    const ownerId = await this.resolveOwnerId(userId);
+
     // Affirmative for single match
     if (['yes', 'y', 'yeah', 'yep', 'sure', 'ok', 'go', 'do it'].includes(trimmed)) {
       this.pendingConfirmations.delete(userId);
-      return this.executeWorkflow(userId, pending.matches[0].workflow);
+      return this.executeWorkflow(ownerId, pending.matches[0].workflow);
     }
 
     // Number selection for multiple matches
     const num = parseInt(trimmed, 10);
     if (!isNaN(num) && num >= 1 && num <= pending.matches.length) {
       this.pendingConfirmations.delete(userId);
-      return this.executeWorkflow(userId, pending.matches[num - 1].workflow);
+      return this.executeWorkflow(ownerId, pending.matches[num - 1].workflow);
     }
 
     // Unrecognized response — clear pending and let normal flow handle it
@@ -193,6 +198,29 @@ export class WorkflowTriggerService {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Resolve a channel userId (e.g. "tg:12345") to the workflow owner's userId.
+   * If the userId has a channel prefix, looks up the linked owner via channel_identities.
+   * Falls back to the original userId if no mapping is found.
+   */
+  private async resolveOwnerId(userId: string): Promise<string> {
+    const channelPrefixes: Record<string, string> = {
+      'tg:': 'telegram',
+      'wa:': 'whatsapp'
+    };
+
+    for (const [prefix, channel] of Object.entries(channelPrefixes)) {
+      if (userId.startsWith(prefix)) {
+        const channelUserId = userId.slice(prefix.length);
+        const ownerId = await this.db.findOwnerByChannelUserId(channelUserId, channel);
+        if (ownerId) return ownerId;
+        break;
+      }
+    }
+
+    return userId;
   }
 
   /**

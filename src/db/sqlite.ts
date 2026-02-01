@@ -957,6 +957,13 @@ export class SQLiteDatabase implements IDatabase {
     return rows.map(row => this.mapChannelIdentity(row));
   }
 
+  async findOwnerByChannelUserId(channelUserId: string, channel: string): Promise<string | null> {
+    const row = this.db.prepare(
+      'SELECT owner_id FROM channel_identities WHERE channel_user_id = ? AND channel = ? LIMIT 1'
+    ).get(channelUserId, channel) as { owner_id: string } | undefined;
+    return row?.owner_id ?? null;
+  }
+
   async createChannelIdentity(identity: Omit<ChannelIdentity, 'createdAt' | 'updatedAt'>): Promise<ChannelIdentity> {
     const now = new Date().toISOString();
     this.db.prepare(`
