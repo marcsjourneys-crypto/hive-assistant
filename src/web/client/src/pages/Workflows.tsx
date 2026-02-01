@@ -110,12 +110,31 @@ export default function WorkflowsPage() {
         const found = scriptList.find(sc => sc.name === config.scriptName);
         scriptId = found?.id;
       }
+      // Parse template channel format "telegram:7632128601" → channel + identity
+      let channel = s.channel || 'telegram';
+      if (s.type === 'notify' && config.channel) {
+        const colonIdx = config.channel.indexOf(':');
+        if (colonIdx > 0) {
+          const chName = config.channel.slice(0, colonIdx);
+          const chUserId = config.channel.slice(colonIdx + 1);
+          channel = chName;
+          // Look up the identity by channel + channelUserId
+          const identity = identityList.find(
+            id => id.channel === chName && id.channelUserId === chUserId
+          );
+          if (identity) {
+            inputs.identityId = { type: 'static', value: identity.id };
+          }
+        } else {
+          channel = config.channel;
+        }
+      }
       return {
         id: s.id,
         type: s.type,
         scriptId,
         skillName: s.skillName,
-        channel: s.type === 'notify' ? (config.channel || s.channel || 'telegram') : s.channel,
+        channel,
         label: s.label || s.name,
         inputs,
         tools: s.tools,
