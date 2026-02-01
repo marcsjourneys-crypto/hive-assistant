@@ -91,54 +91,58 @@ export default function WorkflowsPage() {
     // Normalize: template-format steps use config.inputs (flat strings),
     // editor expects inputs: Record<string, InputMapping>
     const steps: StepDef[] = rawSteps.map(s => {
+      let step: StepDef;
+
       if (s.inputs && typeof s.inputs === 'object' && !Array.isArray(s.inputs)) {
-        return s as StepDef;
-      }
-      const config = s.config || {};
-      const inputs: Record<string, InputMapping> = {};
-      if (config.inputs && typeof config.inputs === 'object') {
-        for (const [k, v] of Object.entries(config.inputs)) {
-          inputs[k] = { type: 'static', value: String(v) };
+        // Already has editor-format inputs
+        step = s as StepDef;
+      } else {
+        // Template-format step: convert config → editor format
+        const config = s.config || {};
+        const inputs: Record<string, InputMapping> = {};
+        if (config.inputs && typeof config.inputs === 'object') {
+          for (const [k, v] of Object.entries(config.inputs)) {
+            inputs[k] = { type: 'static', value: String(v) };
+          }
         }
+        if (s.type === 'notify' && config.message) {
+          inputs.message = { type: 'static', value: config.message };
+        }
+        // Resolve scriptName → scriptId
+        let scriptId = s.scriptId;
+        if (!scriptId && config.scriptName) {
+          const found = scriptList.find(sc => sc.name === config.scriptName);
+          scriptId = found?.id;
+        }
+        step = {
+          id: s.id,
+          type: s.type,
+          scriptId,
+          skillName: s.skillName,
+          channel: s.type === 'notify' ? (config.channel || s.channel || 'telegram') : s.channel,
+          label: s.label || s.name,
+          inputs,
+          tools: s.tools,
+        } as StepDef;
       }
-      if (s.type === 'notify' && config.message) {
-        inputs.message = { type: 'static', value: config.message };
-      }
-      // Resolve scriptName → scriptId
-      let scriptId = s.scriptId;
-      if (!scriptId && config.scriptName) {
-        const found = scriptList.find(sc => sc.name === config.scriptName);
-        scriptId = found?.id;
-      }
-      // Parse template channel format "telegram:7632128601" → channel + identity
-      let channel = s.channel || 'telegram';
-      if (s.type === 'notify' && config.channel) {
-        const colonIdx = config.channel.indexOf(':');
-        if (colonIdx > 0) {
-          const chName = config.channel.slice(0, colonIdx);
-          const chUserId = config.channel.slice(colonIdx + 1);
-          channel = chName;
-          // Look up the identity by channel + channelUserId
+
+      // Always normalize composite channel values like "telegram:7632128601"
+      if (step.type === 'notify' && step.channel && step.channel.includes(':')) {
+        const colonIdx = step.channel.indexOf(':');
+        const chName = step.channel.slice(0, colonIdx);
+        const chUserId = step.channel.slice(colonIdx + 1);
+        step = { ...step, channel: chName };
+        if (!step.inputs.identityId) {
           const identity = identityList.find(
             id => id.channel === chName && id.channelUserId === chUserId
           );
           if (identity) {
-            inputs.identityId = { type: 'static', value: identity.id };
+            step = { ...step, inputs: { ...step.inputs, identityId: { type: 'static', value: identity.id } } };
           }
-        } else {
-          channel = config.channel;
         }
       }
-      return {
-        id: s.id,
-        type: s.type,
-        scriptId,
-        skillName: s.skillName,
-        channel,
-        label: s.label || s.name,
-        inputs,
-        tools: s.tools,
-      } as StepDef;
+
+      return step;
     });
     stepCounter = steps.length;
     setForm({ name: wf.name, description: wf.description, steps });
