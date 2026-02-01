@@ -12,6 +12,8 @@ export default function Logs() {
   const [detail, setDetail] = useState<DebugLogDetail | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [confirmClear, setConfirmClear] = useState<'all' | 'older' | null>(null);
   const limit = 50;
 
   useEffect(() => {
@@ -72,6 +74,26 @@ export default function Logs() {
     }
   };
 
+  const clearLogs = async (mode: 'all' | 'older') => {
+    setClearing(true);
+    try {
+      const before = mode === 'older'
+        ? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+        : undefined;
+      const result = await logs.cleanup(before);
+      setConfirmClear(null);
+      await loadStatus();
+      await loadLogs();
+      if (result.deleted === 0) {
+        setError('No logs to delete.');
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setClearing(false);
+    }
+  };
+
   const formatTime = (d: string) => {
     const date = new Date(d);
     return date.toLocaleString();
@@ -86,7 +108,7 @@ export default function Logs() {
 
       {error && <div className="text-red-600 bg-red-50 p-3 rounded-lg mb-4">{error}</div>}
 
-      {/* Toggle */}
+      {/* Toggle + Clear */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
         <div className="flex items-center justify-between">
           <div>
@@ -97,18 +119,57 @@ export default function Logs() {
                 : 'Disabled - enable to capture what is sent to the AI model'}
             </p>
           </div>
-          <button
-            onClick={toggleEnabled}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              status?.enabled ? 'bg-hive-500' : 'bg-gray-300'
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                status?.enabled ? 'translate-x-6' : 'translate-x-1'
+          <div className="flex items-center gap-4">
+            {status && status.totalLogs > 0 && (
+              confirmClear ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">
+                    {confirmClear === 'all' ? 'Delete all logs?' : 'Delete logs older than 7 days?'}
+                  </span>
+                  <button
+                    onClick={() => clearLogs(confirmClear)}
+                    disabled={clearing}
+                    className="px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 disabled:opacity-50"
+                  >
+                    {clearing ? 'Deleting...' : 'Confirm'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmClear(null)}
+                    className="px-2.5 py-1 text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setConfirmClear('older')}
+                    className="px-2.5 py-1 text-xs text-gray-500 border border-gray-300 rounded-md hover:bg-gray-50"
+                  >
+                    Clear older than 7d
+                  </button>
+                  <button
+                    onClick={() => setConfirmClear('all')}
+                    className="px-2.5 py-1 text-xs text-red-600 border border-red-200 rounded-md hover:bg-red-50"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              )
+            )}
+            <button
+              onClick={toggleEnabled}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                status?.enabled ? 'bg-hive-500' : 'bg-gray-300'
               }`}
-            />
-          </button>
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  status?.enabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
         </div>
       </div>
 
