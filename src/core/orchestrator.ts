@@ -4,7 +4,7 @@ import { getConfig, getApiKey } from '../utils/config';
 export interface RoutingDecision {
   selectedSkill: string | null;
   contextSummary: string | null;
-  intent: 'task_query' | 'file_operation' | 'conversation' | 'creative' | 'code' | 'analysis' | 'greeting' | 'briefing' | 'personal';
+  intent: 'task_query' | 'file_operation' | 'conversation' | 'creative' | 'code' | 'analysis' | 'greeting' | 'briefing' | 'personal' | 'workflow_trigger';
   complexity: 'simple' | 'medium' | 'complex';
   suggestedModel: 'haiku' | 'sonnet' | 'opus';
   includePersonality: boolean;
@@ -193,9 +193,9 @@ ${hasHistory ? `Last context: "${lastMsg}"` : ''}
 Skills: ${skillNames}
 
 Output:
-{"intent":"greeting|conversation|personal|briefing|task_query|code|analysis|creative|file_operation","complexity":"simple|medium|complex","suggestedModel":"haiku|sonnet|opus","selectedSkill":null,"contextSummary":null}
+{"intent":"greeting|conversation|personal|briefing|task_query|code|analysis|creative|file_operation|workflow_trigger","complexity":"simple|medium|complex","suggestedModel":"haiku|sonnet|opus","selectedSkill":null,"contextSummary":null}
 
-Rules: greeting/conversation/personal→haiku, simple queries→haiku, code/analysis→sonnet, creative/complex→opus.
+Rules: greeting/conversation/personal→haiku, simple queries→haiku, code/analysis→sonnet, creative/complex→opus, workflow_trigger when user asks to run/execute/trigger a workflow or automation→haiku.
 JSON only:`;
   }
   
@@ -253,6 +253,11 @@ JSON only:`;
         personalityLevel = 'none';
         includeBio = false;
         break;
+
+      case 'workflow_trigger':
+        personalityLevel = 'none';
+        includeBio = false;
+        break;
     }
     
     return {
@@ -277,8 +282,23 @@ JSON only:`;
     // Simple heuristics for common cases
     const isGreeting = /^(hi|hello|hey|good morning|good evening|morning|evening)/i.test(lowerMessage);
     const isPersonal = /\b(about me|my name|my profile|who am i|what do you know|my preferences|my timezone|my bio)\b/i.test(lowerMessage);
+    const isWorkflowTrigger = /\b(run|execute|trigger|start|launch)\b.*\b(workflow|brief|report|routine|automation)\b/i.test(lowerMessage);
     const isBriefing = /briefing|summary|today|tasks|schedule/i.test(lowerMessage);
     const isCode = /code|function|script|debug|error|programming/i.test(lowerMessage);
+
+    if (isWorkflowTrigger) {
+      return {
+        selectedSkill: null,
+        contextSummary: null,
+        intent: 'workflow_trigger',
+        complexity: 'simple',
+        suggestedModel: 'haiku',
+        includePersonality: false,
+        personalityLevel: 'none',
+        includeBio: false,
+        bioSections: []
+      };
+    }
 
     if (isPersonal) {
       return {

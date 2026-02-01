@@ -22,6 +22,7 @@ import { WorkflowEngine } from '../services/workflow-engine';
 import { WorkflowScheduler } from '../services/workflow-scheduler';
 import { CredentialVault } from '../services/credential-vault';
 import { NotificationSender } from '../services/notification-sender';
+import { WorkflowTriggerService } from '../services/workflow-trigger';
 
 interface StartOptions {
   daemon?: boolean;
@@ -135,7 +136,11 @@ export async function startCommand(options: StartOptions): Promise<void> {
     // 8c. Create workflow engine (requires gateway for skill steps, vault for credential inputs)
     const workflowEngine = new WorkflowEngine(scriptRunner, gateway, db, credentialVault, notificationSender);
 
-    // 8d. Create workflow scheduler
+    // 8d. Create workflow trigger service (natural language workflow triggering)
+    const workflowTrigger = new WorkflowTriggerService(db, workflowEngine);
+    gateway.setWorkflowTrigger(workflowTrigger);
+
+    // 8e. Create workflow scheduler
     const workflowScheduler = new WorkflowScheduler(db, workflowEngine);
     await workflowScheduler.start();
 

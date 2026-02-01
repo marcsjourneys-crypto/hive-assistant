@@ -10,6 +10,7 @@ import { SkillResolver } from '../services/skill-resolver';
 import { getConfig } from '../utils/config';
 import { ensureUserWorkspace } from '../utils/user-workspace';
 import { FileAccessService } from '../services/file-access';
+import { WorkflowTriggerService } from '../services/workflow-trigger';
 
 /** Configuration for creating a Gateway instance. */
 export interface GatewayConfig {
@@ -22,6 +23,7 @@ export interface GatewayConfig {
   userSettings?: UserSettingsService;
   skillResolver?: SkillResolver;
   fileAccess?: FileAccessService;
+  workflowTrigger?: WorkflowTriggerService;
 }
 
 /** Result returned from handleMessage. */
@@ -53,6 +55,7 @@ export class Gateway {
   private userSettings?: UserSettingsService;
   private skillResolver?: SkillResolver;
   private fileAccess?: FileAccessService;
+  private workflowTrigger?: WorkflowTriggerService;
   private skillsCache: SkillMeta[] | null = null;
 
   constructor(config: GatewayConfig) {
@@ -65,6 +68,16 @@ export class Gateway {
     this.userSettings = config.userSettings;
     this.skillResolver = config.skillResolver;
     this.fileAccess = config.fileAccess;
+    this.workflowTrigger = config.workflowTrigger;
+  }
+
+  /**
+   * Set the workflow trigger service.
+   * Uses a setter to resolve circular dependency at startup:
+   * Gateway → WorkflowEngine → Gateway (for skill steps).
+   */
+  setWorkflowTrigger(trigger: WorkflowTriggerService): void {
+    this.workflowTrigger = trigger;
   }
 
   /**
@@ -113,12 +126,57 @@ export class Gateway {
       description: s.description
     }));
 
+    // 5b. Check for pending workflow confirmation before routing.
+    //     If the user said "yes" or "1", the orchestrator wouldn't classify that
+    //     as workflow_trigger, so we intercept it here first.
+    if (this.workflowTrigger && this.workflowTrigger.hasPendingConfirmation(userId)) {
+      const confirmResult = await this.workflowTrigger.handleConfirmation(userId, message);
+      if (confirmResult) {
+        await this.db.addMessage({
+          id: uuidv4(),
+          conversationId: convId,
+          role: 'assistant',
+          content: confirmResult.message
+        });
+        const confirmRouting: RoutingDecision = {
+          selectedSkill: null, contextSummary: null, intent: 'workflow_trigger',
+          complexity: 'simple', suggestedModel: 'haiku', includePersonality: false,
+          personalityLevel: 'none', includeBio: false, bioSections: []
+        };
+        return {
+          response: confirmResult.message,
+          conversationId: convId,
+          routing: confirmRouting,
+          usage: { model: 'none', tokensIn: 0, tokensOut: 0, costCents: 0, estimatedTokensSaved: 0 }
+        };
+      }
+      // confirmResult is null → confirmation expired, proceed with normal flow
+    }
+
     // 6. Route through orchestrator
     const debug = process.env.HIVE_LOG_LEVEL === 'debug';
     if (debug) console.log(`  [gateway] Routing message for ${userId}...`);
     const historyForOrchestrator = recentMessages.slice(-5);
     const routing = await this.orchestrator.route(message, historyForOrchestrator, skillInfos);
     console.log(`  [gateway] Routed: intent=${routing.intent}, model=${routing.suggestedModel}`);
+
+    // 6b. Intercept workflow trigger intent — execute workflow directly,
+    //     skip context building and AI executor call entirely.
+    if (this.workflowTrigger && routing.intent === 'workflow_trigger') {
+      const triggerResult = await this.workflowTrigger.handleWorkflowTrigger(userId, message);
+      await this.db.addMessage({
+        id: uuidv4(),
+        conversationId: convId,
+        role: 'assistant',
+        content: triggerResult.message
+      });
+      return {
+        response: triggerResult.message,
+        conversationId: convId,
+        routing,
+        usage: { model: 'none', tokensIn: 0, tokensOut: 0, costCents: 0, estimatedTokensSaved: 0 }
+      };
+    }
 
     // 7. Load selected skill — use forceSkill if provided, otherwise orchestrator's choice
     const skillName = options?.forceSkill || routing.selectedSkill;
