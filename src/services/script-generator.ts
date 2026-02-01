@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { getApiKey } from '../utils/config';
+import { getApiKey, getModelId } from '../utils/config';
 
 export interface GenerateScriptResult {
   name: string;
@@ -33,6 +33,26 @@ Respond ONLY with a JSON object (no markdown, no code fences) containing:
 export class ScriptGenerator {
   private client: Anthropic | null = null;
 
+  /**
+   * Extract JSON from a response that may be wrapped in markdown code fences.
+   */
+  private extractJson(text: string): string {
+    // Try raw text first
+    const trimmed = text.trim();
+    if (trimmed.startsWith('{')) return trimmed;
+
+    // Strip ```json ... ``` or ``` ... ```
+    const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+    if (fenceMatch) return fenceMatch[1].trim();
+
+    // Find first { to last }
+    const start = trimmed.indexOf('{');
+    const end = trimmed.lastIndexOf('}');
+    if (start !== -1 && end > start) return trimmed.slice(start, end + 1);
+
+    return trimmed;
+  }
+
   private getClient(): Anthropic {
     if (!this.client) {
       const apiKey = getApiKey();
@@ -51,7 +71,7 @@ export class ScriptGenerator {
     const client = this.getClient();
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: getModelId('sonnet'),
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [
@@ -65,9 +85,10 @@ export class ScriptGenerator {
       .map(block => (block as any).text)
       .join('');
 
-    // Parse the JSON response
+    // Parse the JSON response — strip markdown fences if present
+    const jsonStr = this.extractJson(text);
     try {
-      const result = JSON.parse(text);
+      const result = JSON.parse(jsonStr);
       return {
         name: result.name || 'generated-script',
         description: result.description || description,
@@ -76,7 +97,6 @@ export class ScriptGenerator {
         outputSchema: result.outputSchema || result.output_schema || {}
       };
     } catch {
-      // If JSON parsing fails, try to extract code from the response
       throw new Error('Failed to parse AI response. Please try again with a clearer description.');
     }
   }
