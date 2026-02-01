@@ -80,7 +80,8 @@ export class Gateway {
     userId: string,
     message: string,
     channel: 'whatsapp' | 'telegram' | 'cli' | 'web' | 'workflow',
-    conversationId?: string
+    conversationId?: string,
+    options?: { forceSkill?: string }
   ): Promise<HandleMessageResult> {
     // 1. Ensure user exists
     await this.ensureUser(userId);
@@ -119,11 +120,15 @@ export class Gateway {
     const routing = await this.orchestrator.route(message, historyForOrchestrator, skillInfos);
     console.log(`  [gateway] Routed: intent=${routing.intent}, model=${routing.suggestedModel}`);
 
-    // 7. Load selected skill if orchestrator chose one (per-user if resolver available)
-    const skill = routing.selectedSkill
+    // 7. Load selected skill — use forceSkill if provided, otherwise orchestrator's choice
+    const skillName = options?.forceSkill || routing.selectedSkill;
+    if (options?.forceSkill) {
+      routing.selectedSkill = options.forceSkill;
+    }
+    const skill = skillName
       ? (this.skillResolver
-          ? await this.skillResolver.findAndLoadSkillForUser(userId, routing.selectedSkill)
-          : findAndLoadSkill(routing.selectedSkill, this.workspacePath))
+          ? await this.skillResolver.findAndLoadSkillForUser(userId, skillName)
+          : findAndLoadSkill(skillName, this.workspacePath))
       : null;
 
     // 7b. Inject DB summary if orchestrator didn't provide one

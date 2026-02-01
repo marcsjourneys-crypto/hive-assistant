@@ -21,6 +21,7 @@ import { ScriptGenerator } from '../services/script-generator';
 import { WorkflowEngine } from '../services/workflow-engine';
 import { WorkflowScheduler } from '../services/workflow-scheduler';
 import { CredentialVault } from '../services/credential-vault';
+import { NotificationSender } from '../services/notification-sender';
 
 interface StartOptions {
   daemon?: boolean;
@@ -127,10 +128,14 @@ export async function startCommand(options: StartOptions): Promise<void> {
       fileAccess
     });
 
-    // 8b. Create workflow engine (requires gateway for skill steps, vault for credential inputs)
-    const workflowEngine = new WorkflowEngine(scriptRunner, gateway, db, credentialVault);
+    // 8b. Create notification sender (for workflow notify steps)
+    const telegramToken = config.channels.telegram.enabled ? config.channels.telegram.botToken : undefined;
+    const notificationSender = new NotificationSender(telegramToken);
 
-    // 8c. Create workflow scheduler
+    // 8c. Create workflow engine (requires gateway for skill steps, vault for credential inputs)
+    const workflowEngine = new WorkflowEngine(scriptRunner, gateway, db, credentialVault, notificationSender);
+
+    // 8d. Create workflow scheduler
     const workflowScheduler = new WorkflowScheduler(db, workflowEngine);
     await workflowScheduler.start();
 

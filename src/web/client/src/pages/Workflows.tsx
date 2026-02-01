@@ -10,9 +10,10 @@ interface InputMapping {
 
 interface StepDef {
   id: string;
-  type: 'script' | 'skill';
+  type: 'script' | 'skill' | 'notify';
   scriptId?: string;
   skillName?: string;
+  channel?: string;
   label?: string;
   inputs: Record<string, InputMapping>;
 }
@@ -93,10 +94,15 @@ export default function WorkflowsPage() {
     setRunResult(null);
   };
 
-  const addStep = (type: 'script' | 'skill') => {
+  const addStep = (type: 'script' | 'skill' | 'notify') => {
+    const step: StepDef = { id: newStepId(), type, inputs: {} };
+    if (type === 'notify') {
+      step.channel = 'telegram';
+      step.inputs = { message: { type: 'static', value: '' } };
+    }
     setForm(f => ({
       ...f,
-      steps: [...f.steps, { id: newStepId(), type, inputs: {} }]
+      steps: [...f.steps, step]
     }));
   };
 
@@ -294,7 +300,7 @@ export default function WorkflowsPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Steps</label>
               {form.steps.length === 0 && (
-                <p className="text-sm text-gray-400 mb-2">No steps yet. Add a script or skill step below.</p>
+                <p className="text-sm text-gray-400 mb-2">No steps yet. Add a script, skill, or notify step below.</p>
               )}
               <div className="space-y-3">
                 {form.steps.map((step, idx) => (
@@ -303,7 +309,9 @@ export default function WorkflowsPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-mono bg-gray-200 px-2 py-0.5 rounded">{step.id}</span>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          step.type === 'script' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                          step.type === 'script' ? 'bg-blue-100 text-blue-700' :
+                          step.type === 'notify' ? 'bg-green-100 text-green-700' :
+                          'bg-purple-100 text-purple-700'
                         }`}>
                           {step.type}
                         </span>
@@ -317,7 +325,7 @@ export default function WorkflowsPage() {
                     </div>
 
                     {/* Step target */}
-                    {step.type === 'script' ? (
+                    {step.type === 'script' && (
                       <div className="mb-3">
                         <label className="block text-xs text-gray-500 mb-1">Script</label>
                         <select
@@ -331,7 +339,8 @@ export default function WorkflowsPage() {
                           ))}
                         </select>
                       </div>
-                    ) : (
+                    )}
+                    {step.type === 'skill' && (
                       <div className="mb-3">
                         <label className="block text-xs text-gray-500 mb-1">Skill</label>
                         <select
@@ -343,6 +352,18 @@ export default function WorkflowsPage() {
                           {skillList.map(s => (
                             <option key={s.id} value={s.name}>{s.name}</option>
                           ))}
+                        </select>
+                      </div>
+                    )}
+                    {step.type === 'notify' && (
+                      <div className="mb-3">
+                        <label className="block text-xs text-gray-500 mb-1">Channel</label>
+                        <select
+                          value={step.channel || 'telegram'}
+                          onChange={e => updateStep(idx, { channel: e.target.value })}
+                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-hive-500"
+                        >
+                          <option value="telegram">Telegram</option>
                         </select>
                       </div>
                     )}
@@ -434,6 +455,12 @@ export default function WorkflowsPage() {
                   className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors"
                 >
                   + Skill Step
+                </button>
+                <button
+                  onClick={() => addStep('notify')}
+                  className="px-3 py-1.5 border border-green-300 rounded-lg text-xs text-green-700 hover:bg-green-50 transition-colors"
+                >
+                  + Notify Step
                 </button>
               </div>
             </div>

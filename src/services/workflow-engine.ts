@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Database } from '../db/interface';
 import { ScriptRunner } from './script-runner';
 import { CredentialVault } from './credential-vault';
+import { NotificationSender } from './notification-sender';
 import { Gateway } from '../core/gateway';
 
 /** Input mapping for a workflow step. */
@@ -15,9 +16,10 @@ export interface InputMapping {
 /** A single step in a workflow definition. */
 export interface StepDefinition {
   id: string;
-  type: 'script' | 'skill';
+  type: 'script' | 'skill' | 'notify';
   scriptId?: string;
   skillName?: string;
+  channel?: string; // for notify steps: 'telegram'
   label?: string;
   inputs: Record<string, InputMapping>;
 }
@@ -51,7 +53,8 @@ export class WorkflowEngine {
     private scriptRunner: ScriptRunner,
     private gateway: Gateway | undefined,
     private db: Database,
-    private credentialVault?: CredentialVault
+    private credentialVault?: CredentialVault,
+    private notificationSender?: NotificationSender
   ) {}
 
   /**
@@ -98,6 +101,8 @@ export class WorkflowEngine {
           output = await this.executeScriptStep(step, resolvedInputs);
         } else if (step.type === 'skill') {
           output = await this.executeSkillStep(step, resolvedInputs, userId);
+        } else if (step.type === 'notify') {
+          output = await this.executeNotifyStep(step, resolvedInputs, userId);
         } else {
           throw new Error(`Unknown step type: ${(step as any).type}`);
         }
@@ -263,9 +268,59 @@ export class WorkflowEngine {
     const result = await this.gateway.handleMessage(
       userId,
       message,
-      'workflow' as any
+      'workflow' as any,
+      undefined,
+      step.skillName ? { forceSkill: step.skillName } : undefined
     );
 
     return { response: result.response };
+  }
+
+  /**
+   * Execute a notify step by sending a message to a channel.
+   * Extracts the Telegram chat ID from the userId (e.g., "tg:123" → "123").
+   * For web users, the recipient must be provided explicitly via a "recipient" input.
+   */
+  private async executeNotifyStep(
+    step: StepDefinition,
+    inputs: Record<string, unknown>,
+    userId: string
+  ): Promise<unknown> {
+    if (!this.notificationSender) {
+      throw new Error('Notification sender not available');
+    }
+
+    const channel = step.channel || 'telegram';
+
+    // Build the message text from inputs
+    let message: string;
+    if (typeof inputs.message === 'string') {
+      message = inputs.message;
+    } else if (inputs.message != null) {
+      message = JSON.stringify(inputs.message, null, 2);
+    } else {
+      // Combine all inputs into a message
+      const parts = Object.entries(inputs)
+        .filter(([k]) => k !== 'recipient')
+        .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+      message = parts.join('\n');
+    }
+
+    // Resolve recipient: explicit input, or extract from userId
+    let recipient = typeof inputs.recipient === 'string' ? inputs.recipient : '';
+    if (!recipient) {
+      if (channel === 'telegram' && userId.startsWith('tg:')) {
+        recipient = userId.slice(3);
+      } else {
+        throw new Error(
+          `Cannot determine ${channel} recipient for user "${userId}". ` +
+          `Add a "recipient" input with the chat ID.`
+        );
+      }
+    }
+
+    await this.notificationSender.send(channel, recipient, message);
+
+    return { sent: true, channel, recipient: recipient.slice(0, 4) + '...' };
   }
 }
