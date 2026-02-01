@@ -224,7 +224,7 @@ async function seedCsvChangeMonitorTemplate(db: IDatabase): Promise<void> {
       name: 'Send change notification',
       config: {
         channel: '{{notify_channel}}',
-        message: 'CSV changes detected in {{filename}}:\n\n${steps.compare.output.detail}'
+        message: 'CSV changes detected in {{filename}}:\n\n${steps.compare.detail}'
       }
     }
   ];
