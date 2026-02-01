@@ -192,6 +192,7 @@ export class FileAccessService {
 
   /**
    * Extract text from a PDF file using pdf-parse.
+   * If the extracted file is tracked, rotates the old version to .prev first.
    */
   private async extractPdf(userId: string, filename: string): Promise<string> {
     const filesDir = this.getFilesDir(userId);
@@ -208,12 +209,16 @@ export class FileAccessService {
     const extractedPath = safePath(filesDir, extractedName);
     if (!extractedPath) throw new Error('Access denied');
 
+    // Version the extracted file: if it exists and is tracked, rotate to .prev
+    await this.rotateIfTracked(userId, extractedName, extractedPath);
+
     fs.writeFileSync(extractedPath, data.text);
     return extractedName;
   }
 
   /**
    * Extract data from an Excel file as CSV using xlsx.
+   * If the extracted file is tracked, rotates the old version to .prev first.
    */
   private async extractExcel(userId: string, filename: string): Promise<string> {
     const filesDir = this.getFilesDir(userId);
@@ -239,6 +244,9 @@ export class FileAccessService {
     const extractedName = filename.replace(/\.xlsx?$/i, '.extracted.csv');
     const extractedPath = safePath(filesDir, extractedName);
     if (!extractedPath) throw new Error('Access denied');
+
+    // Version the extracted file: if it exists and is tracked, rotate to .prev
+    await this.rotateIfTracked(userId, extractedName, extractedPath);
 
     fs.writeFileSync(extractedPath, csvParts.join('\n\n'));
     return extractedName;
@@ -316,6 +324,43 @@ export class FileAccessService {
     const filesDir = this.getFilesDir(userId);
     const prevPath = safePath(filesDir, filename + '.prev');
     return !!prevPath && fs.existsSync(prevPath);
+  }
+
+  /**
+   * Rotate an existing file to .prev if it's tracked.
+   * Also auto-tracks the extracted file if the source file is tracked
+   * (so the user doesn't have to manually track extracted files).
+   */
+  private async rotateIfTracked(userId: string, filename: string, filePath: string): Promise<void> {
+    if (!this.db || !fs.existsSync(filePath)) return;
+
+    // Check if this extracted file is tracked
+    let meta = await this.db.getFileMetadata(userId, filename);
+
+    // Auto-track: if not explicitly tracked yet, check if source file is tracked
+    // e.g., if TC26.xlsx is tracked, auto-track TC26.extracted.csv
+    if (!meta?.tracked) {
+      const sourceXlsx = filename.replace(/\.extracted\.csv$/i, '.xlsx');
+      const sourceXls = filename.replace(/\.extracted\.csv$/i, '.xls');
+      const sourcePdf = filename.replace(/\.extracted\.txt$/i, '.pdf');
+
+      for (const sourceName of [sourceXlsx, sourceXls, sourcePdf]) {
+        if (sourceName !== filename) {
+          const sourceMeta = await this.db.getFileMetadata(userId, sourceName);
+          if (sourceMeta?.tracked) {
+            // Auto-track the extracted file
+            await this.db.upsertFileMetadata(userId, filename, true);
+            meta = { userId, filename, tracked: true, lastUploadedAt: new Date() };
+            break;
+          }
+        }
+      }
+    }
+
+    if (meta?.tracked) {
+      const prevPath = filePath + '.prev';
+      fs.copyFileSync(filePath, prevPath);
+    }
   }
 
   /**
