@@ -102,7 +102,7 @@ export class WorkflowEngine {
         } else if (step.type === 'skill') {
           output = await this.executeSkillStep(step, resolvedInputs, userId);
         } else if (step.type === 'notify') {
-          output = await this.executeNotifyStep(step, resolvedInputs, userId);
+          output = await this.executeNotifyStep(step, resolvedInputs, userId, stepOutputs);
         } else {
           throw new Error(`Unknown step type: ${(step as any).type}`);
         }
@@ -292,6 +292,11 @@ export class WorkflowEngine {
       message = `Process the following data:\n\n${allInputs}`;
     }
 
+    // Instruct the model to preserve all data fields in its response
+    message += '\n\nIMPORTANT: Include ALL data fields from the input in your response — ' +
+      'especially dates, timestamps, IDs, and numerical values. ' +
+      'Do not omit or paraphrase any data points.';
+
     const result = await this.gateway.handleMessage(
       userId,
       message,
@@ -314,7 +319,8 @@ export class WorkflowEngine {
   private async executeNotifyStep(
     step: StepDefinition,
     inputs: Record<string, unknown>,
-    userId: string
+    userId: string,
+    stepOutputs: Map<string, unknown>
   ): Promise<unknown> {
     if (!this.notificationSender) {
       throw new Error('Notification sender not available');
@@ -368,6 +374,16 @@ export class WorkflowEngine {
 
     await this.notificationSender.send(channel, recipient, message);
 
+    // Collect raw data from previous steps (script outputs, not other notify steps)
+    // to save alongside the notification for follow-up question context.
+    const rawParts: string[] = [];
+    for (const [stepId, output] of stepOutputs) {
+      if (output && typeof output === 'object' && !('sent' in (output as Record<string, unknown>))) {
+        rawParts.push(`${stepId}:\n${this.formatInputValue(output)}`);
+      }
+    }
+    const rawData = rawParts.length > 0 ? rawParts.join('\n\n') : undefined;
+
     // Save notification to conversations so follow-up questions have context.
     // Save to BOTH the workflow owner's conversation AND the channel recipient's
     // conversation, since follow-ups may come from either (web chat or Telegram).
@@ -375,12 +391,12 @@ export class WorkflowEngine {
     const channelUserId = channelPrefix ? `${channelPrefix}${recipient}` : '';
 
     console.log(`  [workflow] Saving notification to conversation for owner "${userId}"`);
-    await this.saveNotificationToConversation(userId, message, channel);
+    await this.saveNotificationToConversation(userId, message, channel, rawData);
 
     // Also save to the channel recipient's conversation if it's a different user
     if (channelUserId && channelUserId !== userId) {
       console.log(`  [workflow] Saving notification to conversation for channel user "${channelUserId}"`);
-      await this.saveNotificationToConversation(channelUserId, message, channel);
+      await this.saveNotificationToConversation(channelUserId, message, channel, rawData);
     }
 
     return { sent: true, channel, recipient: recipient.slice(0, 4) + '...' };
@@ -394,7 +410,8 @@ export class WorkflowEngine {
   private async saveNotificationToConversation(
     userId: string,
     message: string,
-    channel: string
+    channel: string,
+    rawData?: string
   ): Promise<void> {
     try {
       const conversations = await this.db.getConversations(userId, 1);
@@ -411,11 +428,16 @@ export class WorkflowEngine {
         convId = conv.id;
       }
 
+      let content = `[Sent via ${channel} notification]\n\n${message}`;
+      if (rawData) {
+        content += `\n\n---\nSource data:\n${rawData}`;
+      }
+
       await this.db.addMessage({
         id: uuidv4(),
         conversationId: convId,
         role: 'assistant',
-        content: `[Sent via ${channel} notification]\n\n${message}`
+        content
       });
       console.log(`  [workflow] Notification saved to conversation ${convId} for user "${userId}"`);
     } catch (err: any) {
