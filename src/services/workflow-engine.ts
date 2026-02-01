@@ -347,10 +347,12 @@ export class WorkflowEngine {
     const channelPrefix = channel === 'telegram' ? 'tg:' : channel === 'whatsapp' ? 'wa:' : '';
     const channelUserId = channelPrefix ? `${channelPrefix}${recipient}` : '';
 
+    console.log(`  [workflow] Saving notification to conversation for owner "${userId}"`);
     await this.saveNotificationToConversation(userId, message, channel);
 
     // Also save to the channel recipient's conversation if it's a different user
     if (channelUserId && channelUserId !== userId) {
+      console.log(`  [workflow] Saving notification to conversation for channel user "${channelUserId}"`);
       await this.saveNotificationToConversation(channelUserId, message, channel);
     }
 
@@ -388,8 +390,9 @@ export class WorkflowEngine {
         role: 'assistant',
         content: `[Sent via ${channel} notification]\n\n${message}`
       });
-    } catch {
-      // Non-critical: don't fail the workflow if conversation save fails
+      console.log(`  [workflow] Notification saved to conversation ${convId} for user "${userId}"`);
+    } catch (err: any) {
+      console.error(`  [workflow] Failed to save notification to conversation for "${userId}":`, err.message);
     }
   }
 }

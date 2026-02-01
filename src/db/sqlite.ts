@@ -365,13 +365,18 @@ export class SQLiteDatabase implements IDatabase {
   
   // Messages
   async getMessages(conversationId: string, limit: number = 100): Promise<Message[]> {
+    // Get the newest `limit` messages, then re-sort chronologically.
+    // Without the subquery, LIMIT would return the oldest N messages.
     const rows = this.db.prepare(`
-      SELECT * FROM messages 
-      WHERE conversation_id = ? 
-      ORDER BY created_at ASC 
-      LIMIT ?
+      SELECT * FROM (
+        SELECT * FROM messages
+        WHERE conversation_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      ) sub
+      ORDER BY created_at ASC
     `).all(conversationId, limit) as any[];
-    
+
     return rows.map(row => this.mapMessage(row));
   }
   
