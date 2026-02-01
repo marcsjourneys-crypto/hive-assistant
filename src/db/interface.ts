@@ -155,6 +155,8 @@ export interface Reminder {
   isComplete: boolean;
   createdAt: Date;
   completedAt?: Date;
+  dueAt?: Date;
+  notifiedAt?: Date;
 }
 
 export interface DebugLog {
@@ -286,9 +288,10 @@ export interface Database {
   deleteUserCredential(credentialId: string): Promise<void>;
 
   // Reminders
-  createReminder(reminder: Omit<Reminder, 'createdAt' | 'completedAt'>): Promise<Reminder>;
+  createReminder(reminder: Omit<Reminder, 'createdAt' | 'completedAt' | 'notifiedAt'>): Promise<Reminder>;
   getReminders(userId: string, includeComplete?: boolean): Promise<Reminder[]>;
-  updateReminder(id: string, updates: Partial<Pick<Reminder, 'text' | 'isComplete'>>): Promise<Reminder>;
+  getDueReminders(): Promise<Reminder[]>;
+  updateReminder(id: string, updates: Partial<Pick<Reminder, 'text' | 'isComplete' | 'dueAt' | 'notifiedAt'>>): Promise<Reminder>;
   deleteReminder(id: string): Promise<void>;
 
   // Channel Identities

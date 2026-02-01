@@ -30,7 +30,7 @@ export function createRemindersRoutes(db: IDatabase): Router {
    */
   router.post('/', async (req: Request, res: Response) => {
     try {
-      const { text } = req.body;
+      const { text, dueAt } = req.body;
       if (!text || typeof text !== 'string' || !text.trim()) {
         res.status(400).json({ error: 'Reminder text is required' });
         return;
@@ -40,7 +40,8 @@ export function createRemindersRoutes(db: IDatabase): Router {
         id: uuidv4(),
         userId: req.user!.userId,
         text: text.trim(),
-        isComplete: false
+        isComplete: false,
+        dueAt: dueAt ? new Date(dueAt) : undefined
       });
 
       res.status(201).json(reminder);
@@ -56,11 +57,12 @@ export function createRemindersRoutes(db: IDatabase): Router {
    */
   router.put('/:id', async (req: Request, res: Response) => {
     try {
-      const { text, isComplete } = req.body;
-      const updates: { text?: string; isComplete?: boolean } = {};
+      const { text, isComplete, dueAt } = req.body;
+      const updates: { text?: string; isComplete?: boolean; dueAt?: Date } = {};
 
       if (text !== undefined) updates.text = text;
       if (isComplete !== undefined) updates.isComplete = isComplete;
+      if (dueAt !== undefined) updates.dueAt = dueAt ? new Date(dueAt) : undefined;
 
       const updated = await db.updateReminder(req.params.id as string, updates);
       res.json(updated);

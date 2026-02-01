@@ -23,6 +23,7 @@ import { WorkflowScheduler } from '../services/workflow-scheduler';
 import { CredentialVault } from '../services/credential-vault';
 import { NotificationSender } from '../services/notification-sender';
 import { WorkflowTriggerService } from '../services/workflow-trigger';
+import { ReminderScheduler } from '../services/reminder-scheduler';
 
 interface StartOptions {
   daemon?: boolean;
@@ -144,6 +145,10 @@ export async function startCommand(options: StartOptions): Promise<void> {
     const workflowScheduler = new WorkflowScheduler(db, workflowEngine);
     await workflowScheduler.start();
 
+    // 8f. Create reminder scheduler (proactive due-date notifications)
+    const reminderScheduler = new ReminderScheduler(db, notificationSender);
+    reminderScheduler.start();
+
     spinner.succeed('Hive is ready!');
 
     // Show startup info
@@ -205,6 +210,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
 
     const shutdown = async () => {
       console.log(chalk.gray('\nShutting down...'));
+      reminderScheduler.stop();
       await workflowScheduler.stop();
       if (whatsapp) whatsapp.stop();
       if (telegram) telegram.stop();

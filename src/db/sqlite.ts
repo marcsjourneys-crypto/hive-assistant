@@ -273,6 +273,16 @@ export class SQLiteDatabase implements IDatabase {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_identities_uniq ON channel_identities(owner_id, channel, channel_user_id);
       CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id);
     `);
+
+    // Migration: add due_at and notified_at columns to reminders (safe for existing DBs)
+    const reminderCols = this.db.pragma('table_info(reminders)') as Array<{ name: string }>;
+    const colNames = new Set(reminderCols.map(c => c.name));
+    if (!colNames.has('due_at')) {
+      this.db.exec('ALTER TABLE reminders ADD COLUMN due_at TEXT');
+    }
+    if (!colNames.has('notified_at')) {
+      this.db.exec('ALTER TABLE reminders ADD COLUMN notified_at TEXT');
+    }
   }
   
   // Users
@@ -949,12 +959,13 @@ export class SQLiteDatabase implements IDatabase {
   }
 
   // Reminders
-  async createReminder(reminder: Omit<Reminder, 'createdAt' | 'completedAt'>): Promise<Reminder> {
+  async createReminder(reminder: Omit<Reminder, 'createdAt' | 'completedAt' | 'notifiedAt'>): Promise<Reminder> {
     const now = new Date().toISOString();
+    const dueAt = reminder.dueAt ? reminder.dueAt.toISOString() : null;
     this.db.prepare(`
-      INSERT INTO reminders (id, user_id, text, is_complete, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(reminder.id, reminder.userId, reminder.text, reminder.isComplete ? 1 : 0, now);
+      INSERT INTO reminders (id, user_id, text, is_complete, created_at, due_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(reminder.id, reminder.userId, reminder.text, reminder.isComplete ? 1 : 0, now, dueAt);
 
     const row = this.db.prepare('SELECT * FROM reminders WHERE id = ?').get(reminder.id) as any;
     return this.mapReminder(row);
@@ -968,7 +979,7 @@ export class SQLiteDatabase implements IDatabase {
     return rows.map(row => this.mapReminder(row));
   }
 
-  async updateReminder(id: string, updates: Partial<Pick<Reminder, 'text' | 'isComplete'>>): Promise<Reminder> {
+  async updateReminder(id: string, updates: Partial<Pick<Reminder, 'text' | 'isComplete' | 'dueAt' | 'notifiedAt'>>): Promise<Reminder> {
     const sets: string[] = [];
     const values: any[] = [];
 
@@ -983,6 +994,14 @@ export class SQLiteDatabase implements IDatabase {
         sets.push('completed_at = ?');
         values.push(null);
       }
+    }
+    if (updates.dueAt !== undefined) {
+      sets.push('due_at = ?');
+      values.push(updates.dueAt ? updates.dueAt.toISOString() : null);
+    }
+    if (updates.notifiedAt !== undefined) {
+      sets.push('notified_at = ?');
+      values.push(updates.notifiedAt ? updates.notifiedAt.toISOString() : null);
     }
 
     if (sets.length === 0) {
@@ -999,6 +1018,14 @@ export class SQLiteDatabase implements IDatabase {
 
   async deleteReminder(id: string): Promise<void> {
     this.db.prepare('DELETE FROM reminders WHERE id = ?').run(id);
+  }
+
+  async getDueReminders(): Promise<Reminder[]> {
+    const now = new Date().toISOString();
+    const rows = this.db.prepare(
+      'SELECT * FROM reminders WHERE due_at IS NOT NULL AND due_at <= ? AND is_complete = 0 AND notified_at IS NULL'
+    ).all(now) as any[];
+    return rows.map(row => this.mapReminder(row));
   }
 
   // Channel Identities
@@ -1243,7 +1270,9 @@ export class SQLiteDatabase implements IDatabase {
       text: row.text,
       isComplete: row.is_complete === 1,
       createdAt: new Date(row.created_at),
-      completedAt: row.completed_at ? new Date(row.completed_at) : undefined
+      completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
+      dueAt: row.due_at ? new Date(row.due_at) : undefined,
+      notifiedAt: row.notified_at ? new Date(row.notified_at) : undefined
     };
   }
 

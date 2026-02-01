@@ -612,17 +612,19 @@ export interface ReminderInfo {
   isComplete: boolean;
   createdAt: string;
   completedAt?: string;
+  dueAt?: string;
+  notifiedAt?: string;
 }
 
 export const reminders = {
   list: (includeComplete: boolean = false) =>
     request<ReminderInfo[]>(`/reminders${includeComplete ? '?includeComplete=true' : ''}`),
-  create: (text: string) =>
+  create: (text: string, dueAt?: string) =>
     request<ReminderInfo>('/reminders', {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, dueAt }),
     }),
-  update: (id: string, updates: { text?: string; isComplete?: boolean }) =>
+  update: (id: string, updates: { text?: string; isComplete?: boolean; dueAt?: string | null }) =>
     request<ReminderInfo>(`/reminders/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates),

@@ -360,8 +360,8 @@ const MANAGE_REMINDERS_SCHEMA: Record<string, unknown> = {
   properties: {
     action: {
       type: 'string',
-      enum: ['add', 'list', 'complete', 'remove'],
-      description: 'The action to perform: add a new reminder, list existing reminders, complete a reminder, or remove a reminder.'
+      enum: ['add', 'list', 'complete', 'remove', 'set_due'],
+      description: 'The action to perform: add a new reminder, list existing reminders, complete a reminder, remove a reminder, or set/change a due date.'
     },
     text: {
       type: 'string',
@@ -369,7 +369,11 @@ const MANAGE_REMINDERS_SCHEMA: Record<string, unknown> = {
     },
     reminderId: {
       type: 'string',
-      description: 'The reminder ID (required for "complete" and "remove" actions).'
+      description: 'The reminder ID (required for "complete", "remove", and "set_due" actions).'
+    },
+    dueAt: {
+      type: 'string',
+      description: 'ISO 8601 datetime when this reminder is due (optional for "add", required for "set_due"). Parse natural language times into ISO format, e.g. "tomorrow at 3pm" → "2026-02-02T15:00:00". Set to null to clear a due date.'
     },
     includeComplete: {
       type: 'boolean',
@@ -386,9 +390,10 @@ function createRemindersTool(userId: string, db: Database): ToolDefinition {
     description: MANAGE_REMINDERS_META.description,
     input_schema: MANAGE_REMINDERS_SCHEMA,
     handler: async (input: {
-      action: 'add' | 'list' | 'complete' | 'remove';
+      action: 'add' | 'list' | 'complete' | 'remove' | 'set_due';
       text?: string;
       reminderId?: string;
+      dueAt?: string | null;
       includeComplete?: boolean;
     }) => {
       switch (input.action) {
@@ -396,15 +401,22 @@ function createRemindersTool(userId: string, db: Database): ToolDefinition {
           if (!input.text?.trim()) {
             return { error: 'Reminder text is required for "add" action.' };
           }
+          const dueAt = input.dueAt ? new Date(input.dueAt) : undefined;
           const reminder = await db.createReminder({
             id: uuidv4(),
             userId,
             text: input.text.trim(),
-            isComplete: false
+            isComplete: false,
+            dueAt
           });
           return {
             success: true,
-            reminder: { id: reminder.id, text: reminder.text, createdAt: reminder.createdAt.toISOString() }
+            reminder: {
+              id: reminder.id,
+              text: reminder.text,
+              createdAt: reminder.createdAt.toISOString(),
+              dueAt: reminder.dueAt?.toISOString() || null
+            }
           };
         }
         case 'list': {
@@ -415,7 +427,9 @@ function createRemindersTool(userId: string, db: Database): ToolDefinition {
               text: r.text,
               isComplete: r.isComplete,
               createdAt: r.createdAt.toISOString(),
-              completedAt: r.completedAt?.toISOString() || null
+              completedAt: r.completedAt?.toISOString() || null,
+              dueAt: r.dueAt?.toISOString() || null,
+              notifiedAt: r.notifiedAt?.toISOString() || null
             })),
             total: reminders.length
           };
@@ -437,8 +451,23 @@ function createRemindersTool(userId: string, db: Database): ToolDefinition {
           await db.deleteReminder(input.reminderId);
           return { success: true, removed: input.reminderId };
         }
+        case 'set_due': {
+          if (!input.reminderId) {
+            return { error: 'reminderId is required for "set_due" action.' };
+          }
+          const newDueAt = input.dueAt ? new Date(input.dueAt) : undefined;
+          const updatedReminder = await db.updateReminder(input.reminderId, { dueAt: newDueAt });
+          return {
+            success: true,
+            reminder: {
+              id: updatedReminder.id,
+              text: updatedReminder.text,
+              dueAt: updatedReminder.dueAt?.toISOString() || null
+            }
+          };
+        }
         default:
-          return { error: `Unknown action: ${input.action}. Use add, list, complete, or remove.` };
+          return { error: `Unknown action: ${input.action}. Use add, list, complete, remove, or set_due.` };
       }
     }
   };
