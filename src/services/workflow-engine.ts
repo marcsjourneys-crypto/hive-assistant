@@ -180,7 +180,15 @@ export class WorkflowEngine {
 
     for (const [key, mapping] of Object.entries(inputs)) {
       if (mapping.type === 'static') {
-        resolved[key] = mapping.value;
+        // Support string interpolation: ${stepId.path} within static values
+        let val = mapping.value;
+        if (typeof val === 'string' && val.includes('${')) {
+          val = val.replace(/\$\{steps\.([^}]+)\}/g, (_match, ref) => {
+            const resolved = this.resolveRef(ref, stepOutputs);
+            return resolved != null ? String(resolved) : '';
+          });
+        }
+        resolved[key] = val;
       } else if (mapping.type === 'ref' && mapping.source) {
         resolved[key] = this.resolveRef(mapping.source, stepOutputs);
       } else if (mapping.type === 'credential' && mapping.credentialName) {

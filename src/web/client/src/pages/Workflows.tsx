@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { workflows, scripts, skills, credentials, channelIdentities, tools, WorkflowInfo, WorkflowRunResult, ScriptInfo, SkillInfo, CredentialInfo, ChannelIdentityInfo, ToolInfo } from '../api';
+import { workflows, scripts, skills, credentials, channelIdentities, tools, WorkflowInfo, WorkflowRunResult, WorkflowRunInfo, ScriptInfo, SkillInfo, CredentialInfo, ChannelIdentityInfo, ToolInfo } from '../api';
 
 interface InputMapping {
   type: 'static' | 'ref' | 'credential';
@@ -52,6 +52,10 @@ export default function WorkflowsPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState<WorkflowForm>(emptyForm);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
+  const [runHistory, setRunHistory] = useState<WorkflowRunInfo[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [expandedRun, setExpandedRun] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -268,6 +272,32 @@ export default function WorkflowsPage() {
     } finally {
       setRunning(null);
     }
+  };
+
+  const toggleHistory = async (workflowId: string) => {
+    if (historyFor === workflowId) {
+      setHistoryFor(null);
+      setRunHistory([]);
+      setExpandedRun(null);
+      return;
+    }
+    setHistoryFor(workflowId);
+    setLoadingHistory(true);
+    setExpandedRun(null);
+    try {
+      const runs = await workflows.runs(workflowId, 10);
+      setRunHistory(runs);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    return d.toLocaleString();
   };
 
   // Get previous steps for ref dropdowns
@@ -684,6 +714,12 @@ export default function WorkflowsPage() {
                       {running === wf.id ? 'Running...' : 'Run'}
                     </button>
                     <button
+                      onClick={() => toggleHistory(wf.id)}
+                      className={`text-sm transition-colors ${historyFor === wf.id ? 'text-hive-600 font-medium' : 'text-gray-500 hover:text-hive-600'}`}
+                    >
+                      History
+                    </button>
+                    <button
                       onClick={() => startEdit(wf)}
                       className="text-sm text-gray-500 hover:text-hive-600 transition-colors"
                     >
@@ -714,6 +750,81 @@ export default function WorkflowsPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Run History Panel */}
+                {historyFor === wf.id && (
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Recent Runs</h4>
+                    {loadingHistory ? (
+                      <p className="text-xs text-gray-400">Loading...</p>
+                    ) : runHistory.length === 0 ? (
+                      <p className="text-xs text-gray-400">No runs yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {runHistory.map(run => {
+                          let stepsData: { steps?: Array<{ id: string; status: string; durationMs: number; output?: unknown; error?: string }> } = {};
+                          try { stepsData = JSON.parse(run.stepsResult || '{}'); } catch { /* ignore */ }
+                          const runSteps = stepsData.steps || [];
+                          return (
+                            <div key={run.id} className="border border-gray-100 rounded-lg">
+                              <button
+                                onClick={() => setExpandedRun(expandedRun === run.id ? null : run.id)}
+                                className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className={`inline-block w-2 h-2 rounded-full ${
+                                    run.status === 'completed' ? 'bg-green-500' :
+                                    run.status === 'failed' ? 'bg-red-500' :
+                                    'bg-yellow-500 animate-pulse'
+                                  }`} />
+                                  <span className="text-xs text-gray-600">{formatDate(run.startedAt)}</span>
+                                  <span className={`text-xs font-medium ${
+                                    run.status === 'completed' ? 'text-green-700' :
+                                    run.status === 'failed' ? 'text-red-700' :
+                                    'text-yellow-700'
+                                  }`}>
+                                    {run.status}
+                                  </span>
+                                  {run.completedAt && run.startedAt && (
+                                    <span className="text-xs text-gray-400">
+                                      {Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()))}ms
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-gray-400">{expandedRun === run.id ? '\u25B2' : '\u25BC'}</span>
+                              </button>
+                              {expandedRun === run.id && (
+                                <div className="px-3 pb-3 space-y-2">
+                                  {run.error && (
+                                    <div className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded">{run.error}</div>
+                                  )}
+                                  {runSteps.map(rs => (
+                                    <div key={rs.id}>
+                                      <div className="flex items-center gap-2 text-xs">
+                                        <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                                          rs.status === 'completed' ? 'bg-green-500' :
+                                          rs.status === 'failed' ? 'bg-red-500' : 'bg-gray-400'
+                                        }`} />
+                                        <span className="font-mono text-gray-600">{rs.id}</span>
+                                        <span className="text-gray-400">{rs.durationMs}ms</span>
+                                        {rs.error && <span className="text-red-500">{rs.error}</span>}
+                                      </div>
+                                      {rs.output != null && (
+                                        <pre className="ml-4 mt-1 p-2 bg-gray-50 rounded border border-gray-100 text-[11px] font-mono text-gray-600 overflow-auto max-h-32">
+                                          {JSON.stringify(rs.output, null, 2)}
+                                        </pre>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

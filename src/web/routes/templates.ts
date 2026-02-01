@@ -130,7 +130,8 @@ export function createTemplatesRoutes(db: IDatabase, workflowEngine?: WorkflowEn
   /**
    * POST /api/templates/:id/use
    * Instantiate a workflow from a template with user-provided parameters.
-   * Substitutes {{param}} placeholders in steps with actual values.
+   * Substitutes {{param}} placeholders in steps, then converts template-format
+   * steps to editor-format (StepDefinition) so the workflow engine can execute them.
    */
   router.post('/:id/use', async (req: Request, res: Response) => {
     try {
@@ -140,6 +141,7 @@ export function createTemplatesRoutes(db: IDatabase, workflowEngine?: WorkflowEn
         return;
       }
 
+      const userId = req.user!.userId;
       const params: Record<string, string> = req.body.parameters || {};
 
       // Substitute placeholders in stepsJson
@@ -148,13 +150,87 @@ export function createTemplatesRoutes(db: IDatabase, workflowEngine?: WorkflowEn
         stepsStr = stepsStr.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
       }
 
+      // Parse the substituted template steps
+      const templateSteps: any[] = JSON.parse(stepsStr);
+
+      // Load scripts for name→id resolution
+      const allScripts = await db.getScripts(userId);
+
+      // Convert template-format steps to editor-format (StepDefinition)
+      const editorSteps = [];
+      for (const step of templateSteps) {
+        if (step.type === 'script') {
+          const config = step.config || {};
+          const inputs: Record<string, { type: string; value?: unknown; source?: string }> = {};
+
+          // Convert flat config.inputs to InputMapping format
+          if (config.inputs && typeof config.inputs === 'object') {
+            for (const [k, v] of Object.entries(config.inputs)) {
+              inputs[k] = { type: 'static', value: String(v) };
+            }
+          }
+
+          // Resolve script name to ID
+          let scriptId = step.scriptId;
+          if (!scriptId && config.scriptName) {
+            const found = allScripts.find(
+              (s: any) => s.name.toLowerCase() === config.scriptName.toLowerCase()
+            );
+            scriptId = found?.id;
+          }
+
+          editorSteps.push({
+            id: step.id,
+            type: step.type,
+            scriptId,
+            label: step.name || step.label || step.id,
+            inputs,
+          });
+        } else if (step.type === 'notify') {
+          const config = step.config || {};
+          const inputs: Record<string, { type: string; value?: unknown; source?: string }> = {};
+          let channel = config.channel || step.channel || 'telegram';
+
+          // Handle composite channel value like "telegram:7632128601"
+          if (channel.includes(':')) {
+            const colonIdx = channel.indexOf(':');
+            const chName = channel.slice(0, colonIdx);
+            const chUserId = channel.slice(colonIdx + 1);
+            channel = chName;
+
+            // Look up identity by channel + channelUserId
+            const identities = await db.getChannelIdentitiesByChannel(userId, chName);
+            const identity = identities.find((i: any) => i.channelUserId === chUserId);
+            if (identity) {
+              inputs.identityId = { type: 'static', value: identity.id };
+            }
+          }
+
+          // Convert message to input
+          if (config.message) {
+            inputs.message = { type: 'static', value: config.message };
+          }
+
+          editorSteps.push({
+            id: step.id,
+            type: step.type,
+            channel,
+            label: step.name || step.label || step.id,
+            inputs,
+          });
+        } else {
+          // Pass through other step types (skill, etc.)
+          editorSteps.push(step);
+        }
+      }
+
       // Create a new workflow owned by the requesting user
       const workflow = await db.createWorkflow({
         id: uuidv4(),
-        ownerId: req.user!.userId,
+        ownerId: userId,
         name: `${template.name}`,
         description: `Created from template: ${template.name}`,
-        stepsJson: stepsStr,
+        stepsJson: JSON.stringify(editorSteps),
         isActive: true
       });
 
