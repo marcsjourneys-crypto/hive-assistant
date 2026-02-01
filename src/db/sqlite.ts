@@ -12,7 +12,12 @@ import {
   UserAuth,
   UserSoul,
   UserProfile,
-  DebugLog
+  DebugLog,
+  Script,
+  Workflow,
+  WorkflowRun,
+  Schedule,
+  UserCredential
 } from './interface';
 
 export class SQLiteDatabase implements IDatabase {
@@ -163,12 +168,84 @@ export class SQLiteDatabase implements IDatabase {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS scripts (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        language TEXT NOT NULL DEFAULT 'python',
+        source_code TEXT NOT NULL,
+        input_schema TEXT DEFAULT '{}',
+        output_schema TEXT DEFAULT '{}',
+        is_connector INTEGER DEFAULT 0,
+        is_shared INTEGER DEFAULT 0,
+        approved INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (owner_id) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS workflows (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        steps_json TEXT NOT NULL DEFAULT '[]',
+        is_active INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (owner_id) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS workflow_runs (
+        id TEXT PRIMARY KEY,
+        workflow_id TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'running',
+        steps_result TEXT DEFAULT '{}',
+        started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        completed_at TEXT,
+        error TEXT,
+        FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE,
+        FOREIGN KEY (owner_id) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS schedules (
+        id TEXT PRIMARY KEY,
+        workflow_id TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        cron_expression TEXT NOT NULL,
+        timezone TEXT NOT NULL DEFAULT 'UTC',
+        is_active INTEGER DEFAULT 1,
+        last_run_at TEXT,
+        next_run_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE,
+        FOREIGN KEY (owner_id) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS user_credentials (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        service TEXT NOT NULL,
+        encrypted_value TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (owner_id) REFERENCES users(id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
       CREATE INDEX IF NOT EXISTS idx_usage_log_user_id ON usage_log(user_id);
       CREATE INDEX IF NOT EXISTS idx_usage_log_created_at ON usage_log(created_at);
       CREATE INDEX IF NOT EXISTS idx_user_auth_email ON user_auth(email);
       CREATE INDEX IF NOT EXISTS idx_debug_logs_created_at ON debug_logs(created_at);
+      CREATE INDEX IF NOT EXISTS idx_scripts_owner_id ON scripts(owner_id);
+      CREATE INDEX IF NOT EXISTS idx_workflows_owner_id ON workflows(owner_id);
+      CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_id ON workflow_runs(workflow_id);
+      CREATE INDEX IF NOT EXISTS idx_schedules_workflow_id ON schedules(workflow_id);
+      CREATE INDEX IF NOT EXISTS idx_user_credentials_owner_id ON user_credentials(owner_id);
     `);
   }
   
@@ -631,6 +708,215 @@ export class SQLiteDatabase implements IDatabase {
     return result.changes;
   }
 
+  // Scripts
+  async getScript(scriptId: string): Promise<Script | null> {
+    const row = this.db.prepare('SELECT * FROM scripts WHERE id = ?').get(scriptId) as any;
+    if (!row) return null;
+    return this.mapScript(row);
+  }
+
+  async getScripts(userId: string): Promise<Script[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM scripts WHERE owner_id = ? OR is_shared = 1 ORDER BY name ASC'
+    ).all(userId) as any[];
+    return rows.map(row => this.mapScript(row));
+  }
+
+  async createScript(script: Omit<Script, 'createdAt' | 'updatedAt'>): Promise<Script> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO scripts (id, owner_id, name, description, language, source_code, input_schema, output_schema, is_connector, is_shared, approved, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      script.id, script.ownerId, script.name, script.description, script.language,
+      script.sourceCode, JSON.stringify(script.inputSchema), JSON.stringify(script.outputSchema),
+      script.isConnector ? 1 : 0, script.isShared ? 1 : 0, script.approved ? 1 : 0, now, now
+    );
+    return this.getScript(script.id) as Promise<Script>;
+  }
+
+  async updateScript(scriptId: string, updates: Partial<Script>): Promise<Script> {
+    const now = new Date().toISOString();
+    const sets: string[] = ['updated_at = ?'];
+    const values: any[] = [now];
+
+    if (updates.name !== undefined) { sets.push('name = ?'); values.push(updates.name); }
+    if (updates.description !== undefined) { sets.push('description = ?'); values.push(updates.description); }
+    if (updates.sourceCode !== undefined) { sets.push('source_code = ?'); values.push(updates.sourceCode); }
+    if (updates.inputSchema !== undefined) { sets.push('input_schema = ?'); values.push(JSON.stringify(updates.inputSchema)); }
+    if (updates.outputSchema !== undefined) { sets.push('output_schema = ?'); values.push(JSON.stringify(updates.outputSchema)); }
+    if (updates.isConnector !== undefined) { sets.push('is_connector = ?'); values.push(updates.isConnector ? 1 : 0); }
+    if (updates.isShared !== undefined) { sets.push('is_shared = ?'); values.push(updates.isShared ? 1 : 0); }
+    if (updates.approved !== undefined) { sets.push('approved = ?'); values.push(updates.approved ? 1 : 0); }
+
+    values.push(scriptId);
+    this.db.prepare(`UPDATE scripts SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    return this.getScript(scriptId) as Promise<Script>;
+  }
+
+  async deleteScript(scriptId: string): Promise<void> {
+    this.db.prepare('DELETE FROM scripts WHERE id = ?').run(scriptId);
+  }
+
+  // Workflows
+  async getWorkflow(workflowId: string): Promise<Workflow | null> {
+    const row = this.db.prepare('SELECT * FROM workflows WHERE id = ?').get(workflowId) as any;
+    if (!row) return null;
+    return this.mapWorkflow(row);
+  }
+
+  async getWorkflows(userId: string): Promise<Workflow[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM workflows WHERE owner_id = ? ORDER BY updated_at DESC'
+    ).all(userId) as any[];
+    return rows.map(row => this.mapWorkflow(row));
+  }
+
+  async createWorkflow(workflow: Omit<Workflow, 'createdAt' | 'updatedAt'>): Promise<Workflow> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO workflows (id, owner_id, name, description, steps_json, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(workflow.id, workflow.ownerId, workflow.name, workflow.description, workflow.stepsJson, workflow.isActive ? 1 : 0, now, now);
+    return this.getWorkflow(workflow.id) as Promise<Workflow>;
+  }
+
+  async updateWorkflow(workflowId: string, updates: Partial<Workflow>): Promise<Workflow> {
+    const now = new Date().toISOString();
+    const sets: string[] = ['updated_at = ?'];
+    const values: any[] = [now];
+
+    if (updates.name !== undefined) { sets.push('name = ?'); values.push(updates.name); }
+    if (updates.description !== undefined) { sets.push('description = ?'); values.push(updates.description); }
+    if (updates.stepsJson !== undefined) { sets.push('steps_json = ?'); values.push(updates.stepsJson); }
+    if (updates.isActive !== undefined) { sets.push('is_active = ?'); values.push(updates.isActive ? 1 : 0); }
+
+    values.push(workflowId);
+    this.db.prepare(`UPDATE workflows SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    return this.getWorkflow(workflowId) as Promise<Workflow>;
+  }
+
+  async deleteWorkflow(workflowId: string): Promise<void> {
+    this.db.prepare('DELETE FROM workflows WHERE id = ?').run(workflowId);
+  }
+
+  // Workflow Runs
+  async getWorkflowRun(runId: string): Promise<WorkflowRun | null> {
+    const row = this.db.prepare('SELECT * FROM workflow_runs WHERE id = ?').get(runId) as any;
+    if (!row) return null;
+    return this.mapWorkflowRun(row);
+  }
+
+  async getWorkflowRuns(workflowId: string, limit: number = 50): Promise<WorkflowRun[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM workflow_runs WHERE workflow_id = ? ORDER BY started_at DESC LIMIT ?'
+    ).all(workflowId, limit) as any[];
+    return rows.map(row => this.mapWorkflowRun(row));
+  }
+
+  async createWorkflowRun(run: Omit<WorkflowRun, 'completedAt'>): Promise<WorkflowRun> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO workflow_runs (id, workflow_id, owner_id, status, steps_result, started_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(run.id, run.workflowId, run.ownerId, run.status, run.stepsResult, now);
+    return this.getWorkflowRun(run.id) as Promise<WorkflowRun>;
+  }
+
+  async updateWorkflowRun(runId: string, updates: Partial<WorkflowRun>): Promise<WorkflowRun> {
+    const sets: string[] = [];
+    const values: any[] = [];
+
+    if (updates.status !== undefined) { sets.push('status = ?'); values.push(updates.status); }
+    if (updates.stepsResult !== undefined) { sets.push('steps_result = ?'); values.push(updates.stepsResult); }
+    if (updates.completedAt !== undefined) { sets.push('completed_at = ?'); values.push(updates.completedAt.toISOString()); }
+    if (updates.error !== undefined) { sets.push('error = ?'); values.push(updates.error); }
+
+    if (sets.length === 0) return this.getWorkflowRun(runId) as Promise<WorkflowRun>;
+
+    values.push(runId);
+    this.db.prepare(`UPDATE workflow_runs SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    return this.getWorkflowRun(runId) as Promise<WorkflowRun>;
+  }
+
+  // Schedules
+  async getSchedule(scheduleId: string): Promise<Schedule | null> {
+    const row = this.db.prepare('SELECT * FROM schedules WHERE id = ?').get(scheduleId) as any;
+    if (!row) return null;
+    return this.mapSchedule(row);
+  }
+
+  async getSchedules(userId: string): Promise<Schedule[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM schedules WHERE owner_id = ? ORDER BY created_at DESC'
+    ).all(userId) as any[];
+    return rows.map(row => this.mapSchedule(row));
+  }
+
+  async getActiveSchedules(): Promise<Schedule[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM schedules WHERE is_active = 1'
+    ).all() as any[];
+    return rows.map(row => this.mapSchedule(row));
+  }
+
+  async createSchedule(schedule: Omit<Schedule, 'createdAt' | 'lastRunAt' | 'nextRunAt'>): Promise<Schedule> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO schedules (id, workflow_id, owner_id, cron_expression, timezone, is_active, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(schedule.id, schedule.workflowId, schedule.ownerId, schedule.cronExpression, schedule.timezone, schedule.isActive ? 1 : 0, now);
+    return this.getSchedule(schedule.id) as Promise<Schedule>;
+  }
+
+  async updateSchedule(scheduleId: string, updates: Partial<Schedule>): Promise<Schedule> {
+    const sets: string[] = [];
+    const values: any[] = [];
+
+    if (updates.cronExpression !== undefined) { sets.push('cron_expression = ?'); values.push(updates.cronExpression); }
+    if (updates.timezone !== undefined) { sets.push('timezone = ?'); values.push(updates.timezone); }
+    if (updates.isActive !== undefined) { sets.push('is_active = ?'); values.push(updates.isActive ? 1 : 0); }
+    if (updates.lastRunAt !== undefined) { sets.push('last_run_at = ?'); values.push(updates.lastRunAt.toISOString()); }
+    if (updates.nextRunAt !== undefined) { sets.push('next_run_at = ?'); values.push(updates.nextRunAt.toISOString()); }
+
+    if (sets.length === 0) return this.getSchedule(scheduleId) as Promise<Schedule>;
+
+    values.push(scheduleId);
+    this.db.prepare(`UPDATE schedules SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    return this.getSchedule(scheduleId) as Promise<Schedule>;
+  }
+
+  async deleteSchedule(scheduleId: string): Promise<void> {
+    this.db.prepare('DELETE FROM schedules WHERE id = ?').run(scheduleId);
+  }
+
+  // User Credentials
+  async getUserCredential(credentialId: string): Promise<UserCredential | null> {
+    const row = this.db.prepare('SELECT * FROM user_credentials WHERE id = ?').get(credentialId) as any;
+    if (!row) return null;
+    return this.mapUserCredential(row);
+  }
+
+  async getUserCredentials(userId: string): Promise<UserCredential[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM user_credentials WHERE owner_id = ? ORDER BY name ASC'
+    ).all(userId) as any[];
+    return rows.map(row => this.mapUserCredential(row));
+  }
+
+  async createUserCredential(credential: Omit<UserCredential, 'createdAt' | 'updatedAt'>): Promise<UserCredential> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO user_credentials (id, owner_id, name, service, encrypted_value, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(credential.id, credential.ownerId, credential.name, credential.service, credential.encryptedValue, now, now);
+    return this.getUserCredential(credential.id) as Promise<UserCredential>;
+  }
+
+  async deleteUserCredential(credentialId: string): Promise<void> {
+    this.db.prepare('DELETE FROM user_credentials WHERE id = ?').run(credentialId);
+  }
+
   // Mappers
   private mapUser(row: any): User {
     return {
@@ -752,6 +1038,76 @@ export class SQLiteDatabase implements IDatabase {
       success: row.success === 1,
       errorMessage: row.error_message,
       createdAt: new Date(row.created_at)
+    };
+  }
+
+  private mapScript(row: any): Script {
+    return {
+      id: row.id,
+      ownerId: row.owner_id,
+      name: row.name,
+      description: row.description || '',
+      language: row.language,
+      sourceCode: row.source_code,
+      inputSchema: JSON.parse(row.input_schema || '{}'),
+      outputSchema: JSON.parse(row.output_schema || '{}'),
+      isConnector: row.is_connector === 1,
+      isShared: row.is_shared === 1,
+      approved: row.approved === 1,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
+    };
+  }
+
+  private mapWorkflow(row: any): Workflow {
+    return {
+      id: row.id,
+      ownerId: row.owner_id,
+      name: row.name,
+      description: row.description || '',
+      stepsJson: row.steps_json,
+      isActive: row.is_active === 1,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
+    };
+  }
+
+  private mapWorkflowRun(row: any): WorkflowRun {
+    return {
+      id: row.id,
+      workflowId: row.workflow_id,
+      ownerId: row.owner_id,
+      status: row.status,
+      stepsResult: row.steps_result,
+      startedAt: new Date(row.started_at),
+      completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
+      error: row.error || undefined
+    };
+  }
+
+  private mapSchedule(row: any): Schedule {
+    return {
+      id: row.id,
+      workflowId: row.workflow_id,
+      ownerId: row.owner_id,
+      cronExpression: row.cron_expression,
+      timezone: row.timezone,
+      isActive: row.is_active === 1,
+      lastRunAt: row.last_run_at ? new Date(row.last_run_at) : undefined,
+      nextRunAt: row.next_run_at ? new Date(row.next_run_at) : undefined,
+      createdAt: new Date(row.created_at)
+    };
+  }
+
+  private mapUserCredential(row: any): UserCredential {
+    return {
+      id: row.id,
+      ownerId: row.owner_id,
+      name: row.name,
+      service: row.service,
+      encryptedValue: row.encrypted_value,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
     };
   }
 }

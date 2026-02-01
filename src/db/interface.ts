@@ -78,6 +78,66 @@ export interface UserProfile {
   updatedAt: Date;
 }
 
+export interface Script {
+  id: string;
+  ownerId: string;
+  name: string;
+  description: string;
+  language: string;
+  sourceCode: string;
+  inputSchema: Record<string, string>;
+  outputSchema: Record<string, string>;
+  isConnector: boolean;
+  isShared: boolean;
+  approved: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Workflow {
+  id: string;
+  ownerId: string;
+  name: string;
+  description: string;
+  stepsJson: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflowId: string;
+  ownerId: string;
+  status: 'running' | 'completed' | 'failed';
+  stepsResult: string;
+  startedAt: Date;
+  completedAt?: Date;
+  error?: string;
+}
+
+export interface Schedule {
+  id: string;
+  workflowId: string;
+  ownerId: string;
+  cronExpression: string;
+  timezone: string;
+  isActive: boolean;
+  lastRunAt?: Date;
+  nextRunAt?: Date;
+  createdAt: Date;
+}
+
+export interface UserCredential {
+  id: string;
+  ownerId: string;
+  name: string;
+  service: string;
+  encryptedValue: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface DebugLog {
   id: string;
   userId: string;
@@ -171,6 +231,40 @@ export interface Database {
   getDebugLog(id: string): Promise<DebugLog | null>;
   getDebugLogCount(filters?: { userId?: string; channel?: string; intent?: string }): Promise<number>;
   deleteDebugLogsBefore(date: Date): Promise<number>;
+
+  // Scripts
+  getScript(scriptId: string): Promise<Script | null>;
+  getScripts(userId: string): Promise<Script[]>;
+  createScript(script: Omit<Script, 'createdAt' | 'updatedAt'>): Promise<Script>;
+  updateScript(scriptId: string, updates: Partial<Script>): Promise<Script>;
+  deleteScript(scriptId: string): Promise<void>;
+
+  // Workflows
+  getWorkflow(workflowId: string): Promise<Workflow | null>;
+  getWorkflows(userId: string): Promise<Workflow[]>;
+  createWorkflow(workflow: Omit<Workflow, 'createdAt' | 'updatedAt'>): Promise<Workflow>;
+  updateWorkflow(workflowId: string, updates: Partial<Workflow>): Promise<Workflow>;
+  deleteWorkflow(workflowId: string): Promise<void>;
+
+  // Workflow Runs
+  getWorkflowRun(runId: string): Promise<WorkflowRun | null>;
+  getWorkflowRuns(workflowId: string, limit?: number): Promise<WorkflowRun[]>;
+  createWorkflowRun(run: Omit<WorkflowRun, 'completedAt'>): Promise<WorkflowRun>;
+  updateWorkflowRun(runId: string, updates: Partial<WorkflowRun>): Promise<WorkflowRun>;
+
+  // Schedules
+  getSchedule(scheduleId: string): Promise<Schedule | null>;
+  getSchedules(userId: string): Promise<Schedule[]>;
+  getActiveSchedules(): Promise<Schedule[]>;
+  createSchedule(schedule: Omit<Schedule, 'createdAt' | 'lastRunAt' | 'nextRunAt'>): Promise<Schedule>;
+  updateSchedule(scheduleId: string, updates: Partial<Schedule>): Promise<Schedule>;
+  deleteSchedule(scheduleId: string): Promise<void>;
+
+  // User Credentials
+  getUserCredential(credentialId: string): Promise<UserCredential | null>;
+  getUserCredentials(userId: string): Promise<UserCredential[]>;
+  createUserCredential(credential: Omit<UserCredential, 'createdAt' | 'updatedAt'>): Promise<UserCredential>;
+  deleteUserCredential(credentialId: string): Promise<void>;
 }
 
 /**

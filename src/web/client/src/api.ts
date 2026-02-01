@@ -116,6 +116,18 @@ export interface SkillInfo {
 export const skills = {
   list: () => request<SkillInfo[]>('/skills'),
   get: (id: string) => request<SkillInfo & { content: string }>(`/skills/${id}`),
+  create: (skill: { name: string; description: string; content: string; isShared?: boolean }) =>
+    request<SkillInfo & { content: string }>('/skills', {
+      method: 'POST',
+      body: JSON.stringify(skill),
+    }),
+  update: (id: string, updates: { name?: string; description?: string; content?: string; isShared?: boolean }) =>
+    request<SkillInfo & { content: string }>(`/skills/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/skills/${id}`, { method: 'DELETE' }),
 };
 
 // Usage

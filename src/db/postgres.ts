@@ -1,4 +1,4 @@
-import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog } from './interface';
+import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog, Script, Workflow, WorkflowRun, Schedule, UserCredential } from './interface';
 
 /**
  * PostgreSQL database implementation - placeholder.
@@ -48,4 +48,28 @@ export class PostgresDatabase implements IDatabase {
   async getDebugLog(_id: string): Promise<DebugLog | null> { throw new Error('Not implemented'); }
   async getDebugLogCount(_filters?: { userId?: string; channel?: string; intent?: string }): Promise<number> { throw new Error('Not implemented'); }
   async deleteDebugLogsBefore(_date: Date): Promise<number> { throw new Error('Not implemented'); }
+  async getScript(_scriptId: string): Promise<Script | null> { throw new Error('Not implemented'); }
+  async getScripts(_userId: string): Promise<Script[]> { throw new Error('Not implemented'); }
+  async createScript(_script: Omit<Script, 'createdAt' | 'updatedAt'>): Promise<Script> { throw new Error('Not implemented'); }
+  async updateScript(_scriptId: string, _updates: Partial<Script>): Promise<Script> { throw new Error('Not implemented'); }
+  async deleteScript(_scriptId: string): Promise<void> { throw new Error('Not implemented'); }
+  async getWorkflow(_workflowId: string): Promise<Workflow | null> { throw new Error('Not implemented'); }
+  async getWorkflows(_userId: string): Promise<Workflow[]> { throw new Error('Not implemented'); }
+  async createWorkflow(_workflow: Omit<Workflow, 'createdAt' | 'updatedAt'>): Promise<Workflow> { throw new Error('Not implemented'); }
+  async updateWorkflow(_workflowId: string, _updates: Partial<Workflow>): Promise<Workflow> { throw new Error('Not implemented'); }
+  async deleteWorkflow(_workflowId: string): Promise<void> { throw new Error('Not implemented'); }
+  async getWorkflowRun(_runId: string): Promise<WorkflowRun | null> { throw new Error('Not implemented'); }
+  async getWorkflowRuns(_workflowId: string, _limit?: number): Promise<WorkflowRun[]> { throw new Error('Not implemented'); }
+  async createWorkflowRun(_run: Omit<WorkflowRun, 'completedAt'>): Promise<WorkflowRun> { throw new Error('Not implemented'); }
+  async updateWorkflowRun(_runId: string, _updates: Partial<WorkflowRun>): Promise<WorkflowRun> { throw new Error('Not implemented'); }
+  async getSchedule(_scheduleId: string): Promise<Schedule | null> { throw new Error('Not implemented'); }
+  async getSchedules(_userId: string): Promise<Schedule[]> { throw new Error('Not implemented'); }
+  async getActiveSchedules(): Promise<Schedule[]> { throw new Error('Not implemented'); }
+  async createSchedule(_schedule: Omit<Schedule, 'createdAt' | 'lastRunAt' | 'nextRunAt'>): Promise<Schedule> { throw new Error('Not implemented'); }
+  async updateSchedule(_scheduleId: string, _updates: Partial<Schedule>): Promise<Schedule> { throw new Error('Not implemented'); }
+  async deleteSchedule(_scheduleId: string): Promise<void> { throw new Error('Not implemented'); }
+  async getUserCredential(_credentialId: string): Promise<UserCredential | null> { throw new Error('Not implemented'); }
+  async getUserCredentials(_userId: string): Promise<UserCredential[]> { throw new Error('Not implemented'); }
+  async createUserCredential(_credential: Omit<UserCredential, 'createdAt' | 'updatedAt'>): Promise<UserCredential> { throw new Error('Not implemented'); }
+  async deleteUserCredential(_credentialId: string): Promise<void> { throw new Error('Not implemented'); }
 }
