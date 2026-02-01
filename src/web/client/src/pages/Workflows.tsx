@@ -87,7 +87,40 @@ export default function WorkflowsPage() {
   };
 
   const startEdit = (wf: WorkflowInfo) => {
-    const steps: StepDef[] = JSON.parse(wf.stepsJson || '[]');
+    const rawSteps: any[] = JSON.parse(wf.stepsJson || '[]');
+    // Normalize: template-format steps use config.inputs (flat strings),
+    // editor expects inputs: Record<string, InputMapping>
+    const steps: StepDef[] = rawSteps.map(s => {
+      if (s.inputs && typeof s.inputs === 'object' && !Array.isArray(s.inputs)) {
+        return s as StepDef;
+      }
+      const config = s.config || {};
+      const inputs: Record<string, InputMapping> = {};
+      if (config.inputs && typeof config.inputs === 'object') {
+        for (const [k, v] of Object.entries(config.inputs)) {
+          inputs[k] = { type: 'static', value: String(v) };
+        }
+      }
+      if (s.type === 'notify' && config.message) {
+        inputs.message = { type: 'static', value: config.message };
+      }
+      // Resolve scriptName → scriptId
+      let scriptId = s.scriptId;
+      if (!scriptId && config.scriptName) {
+        const found = scriptList.find(sc => sc.name === config.scriptName);
+        scriptId = found?.id;
+      }
+      return {
+        id: s.id,
+        type: s.type,
+        scriptId,
+        skillName: s.skillName,
+        channel: s.type === 'notify' ? (config.channel || s.channel || 'telegram') : s.channel,
+        label: s.label || s.name,
+        inputs,
+        tools: s.tools,
+      } as StepDef;
+    });
     stepCounter = steps.length;
     setForm({ name: wf.name, description: wf.description, steps });
     setEditing(wf.id);
@@ -608,8 +641,10 @@ export default function WorkflowsPage() {
                               s.type === 'script' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'
                             }`}>
                               {s.type === 'script'
-                                ? scriptList.find(sc => sc.id === s.scriptId)?.name || s.scriptId
-                                : s.skillName
+                                ? scriptList.find(sc => sc.id === s.scriptId)?.name || s.scriptId || (s as any).config?.scriptName || s.id
+                                : s.type === 'notify'
+                                ? s.label || (s as any).name || 'notify'
+                                : s.skillName || s.id
                               }
                             </span>
                           </span>
