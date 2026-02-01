@@ -195,7 +195,7 @@ Skills: ${skillNames}
 Output:
 {"intent":"greeting|conversation|personal|briefing|task_query|code|analysis|creative|file_operation|workflow_trigger","complexity":"simple|medium|complex","suggestedModel":"haiku|sonnet|opus","selectedSkill":null,"contextSummary":null}
 
-Rules: greeting/conversation/personal→haiku, simple queries→haiku, code/analysis→sonnet, creative/complex→opus, workflow_trigger when user asks to run/execute/trigger a workflow or automation→haiku.
+Rules: greeting/conversation/personal→haiku, simple queries→haiku, code/analysis→sonnet, creative/complex→opus, workflow_trigger when user asks to run/execute/trigger/list/show workflows or automations→haiku.
 JSON only:`;
   }
   
@@ -282,7 +282,8 @@ JSON only:`;
     // Simple heuristics for common cases
     const isGreeting = /^(hi|hello|hey|good morning|good evening|morning|evening)/i.test(lowerMessage);
     const isPersonal = /\b(about me|my name|my profile|who am i|what do you know|my preferences|my timezone|my bio)\b/i.test(lowerMessage);
-    const isWorkflowTrigger = /\b(run|execute|trigger|start|launch)\b.*\b(workflow|brief|report|routine|automation)\b/i.test(lowerMessage);
+    const isWorkflowTrigger = /\b(run|execute|trigger|start|launch)\b.*\b(workflow|brief|report|routine|automation)\b/i.test(lowerMessage)
+      || /\b(list|show|what|which)\b.*\b(workflow|automation|routine)s?\b/i.test(lowerMessage);
     const isBriefing = /briefing|summary|today|tasks|schedule/i.test(lowerMessage);
     const isCode = /code|function|script|debug|error|programming/i.test(lowerMessage);
 

@@ -61,6 +61,11 @@ export class WorkflowTriggerService {
       if (confirmResult) return confirmResult;
     }
 
+    // Check if this is a listing request rather than a trigger
+    if (this.isListingRequest(message)) {
+      return this.handleWorkflowList(userId);
+    }
+
     const query = this.extractWorkflowName(message);
     if (!query) {
       return {
@@ -188,6 +193,62 @@ export class WorkflowTriggerService {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Check if a message is asking to list workflows rather than trigger one.
+   */
+  private isListingRequest(message: string): boolean {
+    const lower = message.toLowerCase().trim();
+    return /\b(list|show|what|which|tell me|do i have|are (there|my)|available)\b.*\b(workflow|automation|routine)s?\b/i.test(lower)
+      || /\b(workflow|automation|routine)s?\b.*\b(list|available|set up|configured|do i have|exist)\b/i.test(lower);
+  }
+
+  /**
+   * List the user's workflows grouped by active/inactive status.
+   */
+  private async handleWorkflowList(userId: string): Promise<TriggerResult> {
+    const allWorkflows = await this.db.getWorkflows(userId);
+
+    if (allWorkflows.length === 0) {
+      return {
+        type: 'not_found',
+        message: 'You don\'t have any workflows yet. Create one from the web dashboard.'
+      };
+    }
+
+    const active = allWorkflows.filter(w => w.isActive);
+    const inactive = allWorkflows.filter(w => !w.isActive);
+
+    const lines: string[] = [];
+    lines.push(`You have ${allWorkflows.length} workflow${allWorkflows.length === 1 ? '' : 's'}:`);
+    lines.push('');
+
+    if (active.length > 0) {
+      lines.push(`Active (${active.length}):`);
+      for (const w of active) {
+        const desc = w.description ? ` — ${w.description}` : '';
+        lines.push(`  - ${w.name}${desc}`);
+      }
+    }
+
+    if (inactive.length > 0) {
+      if (active.length > 0) lines.push('');
+      lines.push(`Inactive (${inactive.length}):`);
+      for (const w of inactive) {
+        lines.push(`  - ${w.name}`);
+      }
+    }
+
+    if (active.length > 0) {
+      lines.push('');
+      lines.push('Say "run <name>" to trigger any active workflow.');
+    }
+
+    return {
+      type: 'executed',
+      message: lines.join('\n')
+    };
   }
 
   /**
