@@ -115,8 +115,8 @@ export class WorkflowEngine {
         };
 
         stepResults.push(result);
-        // Store output so subsequent steps can reference it
-        stepOutputs.set(step.id, { output });
+        // Store output directly so refs like "step1.tasks" work intuitively
+        stepOutputs.set(step.id, output);
 
         // Update run record with progress
         await this.db.updateWorkflowRun(run.id, {

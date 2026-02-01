@@ -406,7 +406,7 @@ export default function WorkflowsPage() {
                               value={mapping.source || ''}
                               onChange={e => updateInput(idx, key, { ...mapping, source: e.target.value })}
                               className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs font-mono"
-                              placeholder={`e.g., ${getPreviousSteps(idx)[0] || 'step1'}.output.result`}
+                              placeholder={`e.g., ${getPreviousSteps(idx)[0] || 'step1'}.tasks`}
                             />
                           )}
                           {mapping.type === 'credential' && (
