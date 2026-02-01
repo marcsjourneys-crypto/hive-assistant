@@ -323,12 +323,18 @@ export class WorkflowEngine {
 
     const channel = step.channel || 'telegram';
 
-    // Build the message text from inputs
+    // Build the message text from inputs.
+    // Unwrap skill step output objects: { response: "..." } → just the string.
+    let rawMessage = inputs.message;
+    if (rawMessage && typeof rawMessage === 'object' && 'response' in (rawMessage as Record<string, unknown>)) {
+      rawMessage = (rawMessage as Record<string, unknown>).response;
+    }
+
     let message: string;
-    if (typeof inputs.message === 'string') {
-      message = inputs.message;
-    } else if (inputs.message != null) {
-      message = JSON.stringify(inputs.message, null, 2);
+    if (typeof rawMessage === 'string') {
+      message = rawMessage;
+    } else if (rawMessage != null) {
+      message = JSON.stringify(rawMessage, null, 2);
     } else {
       // Combine all inputs into a message
       const parts = Object.entries(inputs)
