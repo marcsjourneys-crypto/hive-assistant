@@ -9,6 +9,9 @@ import SoulEditor from './pages/SoulEditor';
 import ProfileEditor from './pages/ProfileEditor';
 import Skills from './pages/Skills';
 import ScriptsPage from './pages/Scripts';
+import WorkflowsPage from './pages/Workflows';
+import SchedulesPage from './pages/Schedules';
+import CredentialsPage from './pages/Credentials';
 import Channels from './pages/Channels';
 import Users from './pages/admin/Users';
 import System from './pages/admin/System';
@@ -43,6 +46,9 @@ export default function App() {
         <Route path="settings/skills" element={<Skills />} />
         <Route path="settings/channels" element={<Channels />} />
         <Route path="automation/scripts" element={<ScriptsPage />} />
+        <Route path="automation/workflows" element={<WorkflowsPage />} />
+        <Route path="automation/schedules" element={<SchedulesPage />} />
+        <Route path="automation/credentials" element={<CredentialsPage />} />
 
         <Route path="admin/users" element={<AdminRoute><Users /></AdminRoute>} />
         <Route path="admin/system" element={<AdminRoute><System /></AdminRoute>} />

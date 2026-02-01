@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { scripts, ScriptInfo, ScriptTestResult } from '../api';
+import { scripts, ScriptInfo, ScriptTestResult, GenerateScriptResult } from '../api';
 import { useAuth } from '../auth-context';
 
 interface ScriptForm {
@@ -33,6 +33,11 @@ export default function ScriptsPage() {
 
   // Delete confirmation
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  // AI generation
+  const [showAiGenerator, setShowAiGenerator] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     loadScripts();
@@ -149,6 +154,28 @@ export default function ScriptsPage() {
     }
   };
 
+  const handleAiGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setGenerating(true);
+    setError('');
+    try {
+      const result: GenerateScriptResult = await scripts.generate(aiPrompt.trim());
+      setForm({
+        name: result.name,
+        description: result.description,
+        sourceCode: result.sourceCode,
+        isConnector: false,
+      });
+      setEditing('new');
+      setShowAiGenerator(false);
+      setAiPrompt('');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const isOwner = (script: ScriptInfo) => script.ownerId === user?.userId;
 
   return (
@@ -156,12 +183,20 @@ export default function ScriptsPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Scripts</h1>
         {!editing && (
-          <button
-            onClick={startCreate}
-            className="px-4 py-2 bg-hive-500 text-white rounded-lg text-sm font-medium hover:bg-hive-600 transition-colors"
-          >
-            + New Script
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowAiGenerator(true)}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
+            >
+              Generate with AI
+            </button>
+            <button
+              onClick={startCreate}
+              className="px-4 py-2 bg-hive-500 text-white rounded-lg text-sm font-medium hover:bg-hive-600 transition-colors"
+            >
+              + New Script
+            </button>
+          </div>
         )}
       </div>
 
@@ -169,6 +204,39 @@ export default function ScriptsPage() {
         <div className="text-red-600 bg-red-50 p-3 rounded-lg mb-4 flex items-center justify-between">
           <span>{error}</span>
           <button onClick={() => setError('')} className="text-red-400 hover:text-red-600 ml-2">&times;</button>
+        </div>
+      )}
+
+      {/* AI Generator Panel */}
+      {showAiGenerator && (
+        <div className="bg-purple-50 rounded-xl border border-purple-200 p-6 mb-6">
+          <h2 className="text-lg font-semibold mb-2 text-purple-800">Generate Script with AI</h2>
+          <p className="text-sm text-purple-600 mb-4">
+            Describe what you want the script to do in plain language. AI will generate the Python code.
+          </p>
+          <textarea
+            value={aiPrompt}
+            onChange={e => setAiPrompt(e.target.value)}
+            rows={4}
+            className="w-full border border-purple-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            placeholder="e.g., Fetch the latest 10 items from a JSON API endpoint and return them sorted by date..."
+            spellCheck={false}
+          />
+          <div className="flex gap-3 mt-3">
+            <button
+              onClick={handleAiGenerate}
+              disabled={generating || !aiPrompt.trim()}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors"
+            >
+              {generating ? 'Generating...' : 'Generate'}
+            </button>
+            <button
+              onClick={() => { setShowAiGenerator(false); setAiPrompt(''); }}
+              className="px-4 py-2 border border-purple-300 rounded-lg text-sm text-purple-600 hover:bg-purple-100 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 

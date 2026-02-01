@@ -12,6 +12,9 @@ const navItems = [
 
 const automationItems = [
   { to: '/automation/scripts', label: 'Scripts', icon: '🐍' },
+  { to: '/automation/workflows', label: 'Workflows', icon: '🔗' },
+  { to: '/automation/schedules', label: 'Schedules', icon: '⏰' },
+  { to: '/automation/credentials', label: 'Credentials', icon: '🔑' },
 ];
 
 const adminItems = [

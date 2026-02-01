@@ -196,7 +196,25 @@ export const scripts = {
       method: 'POST',
       body: JSON.stringify({ sourceCode, inputs }),
     }),
+  generate: (description: string) =>
+    request<GenerateScriptResult>('/scripts/generate', {
+      method: 'POST',
+      body: JSON.stringify({ description }),
+    }),
+  connectors: () => request<ScriptInfo[]>('/scripts/connectors'),
+  clone: (id: string) =>
+    request<ScriptDetail>(`/scripts/${id}/clone`, { method: 'POST' }),
+  approve: (id: string) =>
+    request<ScriptDetail>(`/scripts/${id}/approve`, { method: 'POST' }),
 };
+
+export interface GenerateScriptResult {
+  name: string;
+  description: string;
+  sourceCode: string;
+  inputSchema: Record<string, string>;
+  outputSchema: Record<string, string>;
+}
 
 // Usage
 export interface UsageSummary {
@@ -413,4 +431,139 @@ export const logs = {
     request<{ success: boolean; deleted: number }>(`/logs${before ? `?before=${before}` : ''}`, {
       method: 'DELETE',
     }),
+};
+
+// Workflows
+export interface WorkflowInfo {
+  id: string;
+  ownerId: string;
+  name: string;
+  description: string;
+  stepsJson: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowRunInfo {
+  id: string;
+  workflowId: string;
+  ownerId: string;
+  status: 'running' | 'completed' | 'failed';
+  stepsResult: string;
+  startedAt: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export interface WorkflowRunResult {
+  status: 'completed' | 'failed';
+  steps: Array<{
+    id: string;
+    status: 'completed' | 'failed' | 'skipped';
+    durationMs: number;
+    output?: unknown;
+    error?: string;
+  }>;
+  totalDurationMs: number;
+  error?: string;
+}
+
+export const workflows = {
+  list: () => request<WorkflowInfo[]>('/workflows'),
+  get: (id: string) => request<WorkflowInfo>(`/workflows/${id}`),
+  create: (workflow: {
+    name: string;
+    description: string;
+    stepsJson: unknown[];
+  }) =>
+    request<WorkflowInfo>('/workflows', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: workflow.name,
+        description: workflow.description,
+        stepsJson: workflow.stepsJson,
+      }),
+    }),
+  update: (id: string, updates: {
+    name?: string;
+    description?: string;
+    stepsJson?: unknown[];
+    isActive?: boolean;
+  }) =>
+    request<WorkflowInfo>(`/workflows/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/workflows/${id}`, { method: 'DELETE' }),
+  run: (id: string) =>
+    request<WorkflowRunResult>(`/workflows/${id}/run`, { method: 'POST' }),
+  runs: (id: string, limit?: number) =>
+    request<WorkflowRunInfo[]>(`/workflows/${id}/runs${limit ? `?limit=${limit}` : ''}`),
+  getRun: (runId: string) =>
+    request<WorkflowRunInfo>(`/workflows/runs/${runId}`),
+};
+
+// Schedules
+export interface ScheduleInfo {
+  id: string;
+  workflowId: string;
+  ownerId: string;
+  cronExpression: string;
+  timezone: string;
+  isActive: boolean;
+  lastRunAt?: string;
+  nextRunAt?: string;
+  createdAt: string;
+}
+
+export const schedules = {
+  list: () => request<ScheduleInfo[]>('/schedules'),
+  create: (schedule: {
+    workflowId: string;
+    cronExpression: string;
+    timezone?: string;
+    isActive?: boolean;
+  }) =>
+    request<ScheduleInfo>('/schedules', {
+      method: 'POST',
+      body: JSON.stringify(schedule),
+    }),
+  update: (id: string, updates: {
+    cronExpression?: string;
+    timezone?: string;
+    isActive?: boolean;
+  }) =>
+    request<ScheduleInfo>(`/schedules/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/schedules/${id}`, { method: 'DELETE' }),
+};
+
+// Credentials
+export interface CredentialInfo {
+  id: string;
+  ownerId: string;
+  name: string;
+  service: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const credentials = {
+  list: () => request<CredentialInfo[]>('/credentials'),
+  create: (credential: {
+    name: string;
+    service: string;
+    value: string;
+  }) =>
+    request<CredentialInfo>('/credentials', {
+      method: 'POST',
+      body: JSON.stringify(credential),
+    }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/credentials/${id}`, { method: 'DELETE' }),
 };

@@ -17,6 +17,10 @@ import { UserSettingsService } from '../services/user-settings';
 import { SkillResolver } from '../services/skill-resolver';
 import { FileAccessService } from '../services/file-access';
 import { ScriptRunner } from '../services/script-runner';
+import { ScriptGenerator } from '../services/script-generator';
+import { WorkflowEngine } from '../services/workflow-engine';
+import { WorkflowScheduler } from '../services/workflow-scheduler';
+import { CredentialVault } from '../services/credential-vault';
 
 interface StartOptions {
   daemon?: boolean;
@@ -104,6 +108,12 @@ export async function startCommand(options: StartOptions): Promise<void> {
     // 7c. Create script runner (Python subprocess execution)
     const scriptRunner = new ScriptRunner();
 
+    // 7d. Create credential vault (AES-256-GCM encrypted storage)
+    const credentialVault = new CredentialVault(db, config.dataDir);
+
+    // 7e. Create AI script generator
+    const scriptGenerator = getApiKey() ? new ScriptGenerator() : undefined;
+
     // 8. Create gateway
     const gateway = new Gateway({
       db,
@@ -116,6 +126,13 @@ export async function startCommand(options: StartOptions): Promise<void> {
       skillResolver,
       fileAccess
     });
+
+    // 8b. Create workflow engine (requires gateway for skill steps)
+    const workflowEngine = new WorkflowEngine(scriptRunner, gateway, db);
+
+    // 8c. Create workflow scheduler
+    const workflowScheduler = new WorkflowScheduler(db, workflowEngine);
+    await workflowScheduler.start();
 
     spinner.succeed('Hive is ready!');
 
@@ -164,7 +181,10 @@ export async function startCommand(options: StartOptions): Promise<void> {
     if (config.web?.enabled) {
       const webPort = config.web.port || 3000;
       const webHost = config.web.host || '0.0.0.0';
-      const app = createWebServer({ db, port: webPort, host: webHost, gateway, skillResolver, scriptRunner });
+      const app = createWebServer({
+        db, port: webPort, host: webHost, gateway, skillResolver,
+        scriptRunner, scriptGenerator, workflowEngine, workflowScheduler, credentialVault
+      });
       webServer = app.listen(webPort, webHost, () => {
         console.log(chalk.green(`  Web dashboard: http://${webHost === '0.0.0.0' ? 'localhost' : webHost}:${webPort}`));
       });
@@ -175,6 +195,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
 
     const shutdown = async () => {
       console.log(chalk.gray('\nShutting down...'));
+      await workflowScheduler.stop();
       if (whatsapp) whatsapp.stop();
       if (telegram) telegram.stop();
       if (webServer) webServer.close();

@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { Database as IDatabase } from '../../db/interface';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireAdmin } from '../middleware/auth';
 import { ScriptRunner } from '../../services/script-runner';
+import { ScriptGenerator } from '../../services/script-generator';
 
-export function createScriptsRoutes(db: IDatabase, scriptRunner: ScriptRunner): Router {
+export function createScriptsRoutes(db: IDatabase, scriptRunner: ScriptRunner, scriptGenerator?: ScriptGenerator): Router {
   const router = Router();
 
   router.use(requireAuth);
@@ -222,6 +223,126 @@ export function createScriptsRoutes(db: IDatabase, scriptRunner: ScriptRunner): 
     } catch (error: any) {
       console.error('[Scripts] Test-code error:', error.message);
       res.status(500).json({ error: 'Failed to test script' });
+    }
+  });
+
+  /**
+   * POST /api/scripts/generate
+   * AI-generate a Python script from a natural language description.
+   */
+  router.post('/generate', async (req: Request, res: Response) => {
+    try {
+      if (!scriptGenerator) {
+        res.status(503).json({ error: 'AI script generation not available (no API key)' });
+        return;
+      }
+
+      const { description } = req.body;
+      if (!description || typeof description !== 'string' || !description.trim()) {
+        res.status(400).json({ error: 'Description is required' });
+        return;
+      }
+
+      const result = await scriptGenerator.generate(description.trim());
+      res.json(result);
+    } catch (error: any) {
+      console.error('[Scripts] Generate error:', error.message);
+      res.status(500).json({ error: 'Failed to generate script' });
+    }
+  });
+
+  /**
+   * GET /api/scripts/connectors
+   * List shared and approved connector scripts (available to all users).
+   */
+  router.get('/connectors', async (req: Request, res: Response) => {
+    try {
+      const allScripts = await db.getScripts(req.user!.userId);
+      const connectors = allScripts.filter(s => s.isConnector && s.isShared && s.approved);
+      res.json(connectors.map(s => ({
+        id: s.id,
+        ownerId: s.ownerId,
+        name: s.name,
+        description: s.description,
+        language: s.language,
+        inputSchema: s.inputSchema,
+        outputSchema: s.outputSchema,
+        isConnector: s.isConnector,
+        isShared: s.isShared,
+        approved: s.approved,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt
+      })));
+    } catch (error: any) {
+      console.error('[Scripts] Connectors error:', error.message);
+      res.status(500).json({ error: 'Failed to load connectors' });
+    }
+  });
+
+  /**
+   * POST /api/scripts/:id/clone
+   * Clone a shared script into the current user's collection.
+   */
+  router.post('/:id/clone', async (req: Request, res: Response) => {
+    try {
+      const scriptId = req.params.id as string;
+      const userId = req.user!.userId;
+
+      const source = await db.getScript(scriptId);
+      if (!source) {
+        res.status(404).json({ error: 'Script not found' });
+        return;
+      }
+
+      // Can only clone shared scripts or own scripts
+      if (!source.isShared && source.ownerId !== userId && !req.user!.isAdmin) {
+        res.status(403).json({ error: 'Access denied' });
+        return;
+      }
+
+      const clone = await db.createScript({
+        id: uuidv4(),
+        ownerId: userId,
+        name: `${source.name} (copy)`,
+        description: source.description,
+        language: source.language,
+        sourceCode: source.sourceCode,
+        inputSchema: source.inputSchema,
+        outputSchema: source.outputSchema,
+        isConnector: false,
+        isShared: false,
+        approved: false
+      });
+
+      res.status(201).json(clone);
+    } catch (error: any) {
+      console.error('[Scripts] Clone error:', error.message);
+      res.status(500).json({ error: 'Failed to clone script' });
+    }
+  });
+
+  /**
+   * POST /api/scripts/:id/approve
+   * Admin: approve a script for sharing.
+   */
+  router.post('/:id/approve', requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const scriptId = req.params.id as string;
+
+      const script = await db.getScript(scriptId);
+      if (!script) {
+        res.status(404).json({ error: 'Script not found' });
+        return;
+      }
+
+      const updated = await db.updateScript(scriptId, {
+        isShared: true,
+        approved: true
+      });
+      res.json(updated);
+    } catch (error: any) {
+      console.error('[Scripts] Approve error:', error.message);
+      res.status(500).json({ error: 'Failed to approve script' });
     }
   });
 

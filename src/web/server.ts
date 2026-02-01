@@ -17,7 +17,14 @@ import { createChatRoutes } from './routes/chat';
 import { Gateway } from '../core/gateway';
 import { SkillResolver } from '../services/skill-resolver';
 import { ScriptRunner } from '../services/script-runner';
+import { ScriptGenerator } from '../services/script-generator';
+import { WorkflowEngine } from '../services/workflow-engine';
+import { WorkflowScheduler } from '../services/workflow-scheduler';
+import { CredentialVault } from '../services/credential-vault';
 import { createScriptsRoutes } from './routes/scripts';
+import { createWorkflowsRoutes } from './routes/workflows';
+import { createSchedulesRoutes } from './routes/schedules';
+import { createCredentialsRoutes } from './routes/credentials';
 
 export interface WebServerConfig {
   db: IDatabase;
@@ -26,6 +33,10 @@ export interface WebServerConfig {
   gateway?: Gateway;
   skillResolver?: SkillResolver;
   scriptRunner?: ScriptRunner;
+  scriptGenerator?: ScriptGenerator;
+  workflowEngine?: WorkflowEngine;
+  workflowScheduler?: WorkflowScheduler;
+  credentialVault?: CredentialVault;
 }
 
 /**
@@ -52,7 +63,16 @@ export function createWebServer(config: WebServerConfig): express.Express {
   app.use('/api/admin', createAdminRoutes(db));
   app.use('/api/logs', createLogsRoutes(db));
   if (config.scriptRunner) {
-    app.use('/api/scripts', createScriptsRoutes(db, config.scriptRunner));
+    app.use('/api/scripts', createScriptsRoutes(db, config.scriptRunner, config.scriptGenerator));
+  }
+  if (config.workflowEngine) {
+    app.use('/api/workflows', createWorkflowsRoutes(db, config.workflowEngine));
+  }
+  if (config.workflowScheduler) {
+    app.use('/api/schedules', createSchedulesRoutes(db, config.workflowScheduler));
+  }
+  if (config.credentialVault) {
+    app.use('/api/credentials', createCredentialsRoutes(config.credentialVault));
   }
   if (config.gateway) {
     app.use('/api/chat', createChatRoutes(db, config.gateway));
