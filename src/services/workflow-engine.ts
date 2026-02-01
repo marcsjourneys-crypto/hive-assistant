@@ -341,8 +341,18 @@ export class WorkflowEngine {
 
     await this.notificationSender.send(channel, recipient, message);
 
-    // Save notification to user's conversation so follow-up questions have context
+    // Save notification to conversations so follow-up questions have context.
+    // Save to BOTH the workflow owner's conversation AND the channel recipient's
+    // conversation, since follow-ups may come from either (web chat or Telegram).
+    const channelPrefix = channel === 'telegram' ? 'tg:' : channel === 'whatsapp' ? 'wa:' : '';
+    const channelUserId = channelPrefix ? `${channelPrefix}${recipient}` : '';
+
     await this.saveNotificationToConversation(userId, message, channel);
+
+    // Also save to the channel recipient's conversation if it's a different user
+    if (channelUserId && channelUserId !== userId) {
+      await this.saveNotificationToConversation(channelUserId, message, channel);
+    }
 
     return { sent: true, channel, recipient: recipient.slice(0, 4) + '...' };
   }
