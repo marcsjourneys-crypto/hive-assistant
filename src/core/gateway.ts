@@ -91,12 +91,17 @@ export class Gateway {
    * @returns The assistant's response and metadata
    */
   async handleMessage(
-    userId: string,
+    rawUserId: string,
     message: string,
     channel: 'whatsapp' | 'telegram' | 'cli' | 'web' | 'workflow',
     conversationId?: string,
     options?: { forceSkill?: string; tools?: string[] }
   ): Promise<HandleMessageResult> {
+    // 0. Resolve channel identity to owner user ID if applicable.
+    //    e.g. tg:123456 → marc (if a channel identity mapping exists).
+    //    This ensures reminders, conversations, and usage are stored under the owner.
+    const userId = await this.resolveUserId(rawUserId, channel);
+
     // 1. Ensure user exists
     await this.ensureUser(userId);
 
@@ -363,6 +368,28 @@ export class Gateway {
         durationMs, success, errorMessage
       });
     }
+  }
+
+  /**
+   * Resolve a channel-prefixed user ID (e.g. tg:123456) to the owner user ID
+   * using channel identity mappings. Returns the original ID if no mapping exists.
+   */
+  private async resolveUserId(userId: string, channel: string): Promise<string> {
+    const channelPrefixes: Record<string, string> = {
+      'tg:': 'telegram',
+      'wa:': 'whatsapp'
+    };
+
+    for (const [prefix, ch] of Object.entries(channelPrefixes)) {
+      if (userId.startsWith(prefix)) {
+        const channelUserId = userId.slice(prefix.length);
+        const ownerId = await this.db.findOwnerByChannelUserId(channelUserId, ch);
+        if (ownerId) return ownerId;
+        break;
+      }
+    }
+
+    return userId;
   }
 
   /**
