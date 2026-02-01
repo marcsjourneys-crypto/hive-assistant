@@ -11,6 +11,7 @@ import { getConfig } from '../utils/config';
 import { ensureUserWorkspace } from '../utils/user-workspace';
 import { FileAccessService } from '../services/file-access';
 import { WorkflowTriggerService } from '../services/workflow-trigger';
+import { getTools } from './tools';
 
 /** Configuration for creating a Gateway instance. */
 export interface GatewayConfig {
@@ -94,7 +95,7 @@ export class Gateway {
     message: string,
     channel: 'whatsapp' | 'telegram' | 'cli' | 'web' | 'workflow',
     conversationId?: string,
-    options?: { forceSkill?: string }
+    options?: { forceSkill?: string; tools?: string[] }
   ): Promise<HandleMessageResult> {
     // 1. Ensure user exists
     await this.ensureUser(userId);
@@ -277,10 +278,23 @@ export class Gateway {
     let errorMessage: string | null = null;
 
     try {
+      const executeOptions: { systemPrompt: string; tools?: import('./tools').ToolDefinition[] } = {
+        systemPrompt: context.systemPrompt
+      };
+
+      // Resolve tool names to definitions if provided
+      if (options?.tools?.length) {
+        const resolvedTools = getTools(options.tools);
+        if (resolvedTools.length > 0) {
+          executeOptions.tools = resolvedTools;
+          console.log(`  [gateway] Passing ${resolvedTools.length} tool(s) to executor: ${resolvedTools.map(t => t.name).join(', ')}`);
+        }
+      }
+
       const result = await this.executor.execute(
         context.messages,
         resolvedModel,
-        { systemPrompt: context.systemPrompt }
+        executeOptions
       );
 
       responseText = result.content;

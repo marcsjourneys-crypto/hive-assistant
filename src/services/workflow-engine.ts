@@ -22,6 +22,7 @@ export interface StepDefinition {
   channel?: string; // for notify steps: 'telegram'
   label?: string;
   inputs: Record<string, InputMapping>;
+  tools?: string[]; // tool names for skill steps (e.g. ['fetch_rss'])
 }
 
 /** Result from executing a single step. */
@@ -292,12 +293,16 @@ export class WorkflowEngine {
       message = `Process the following data:\n\n${allInputs}`;
     }
 
+    const handleOptions: { forceSkill?: string; tools?: string[] } = {};
+    if (step.skillName) handleOptions.forceSkill = step.skillName;
+    if (step.tools?.length) handleOptions.tools = step.tools;
+
     const result = await this.gateway.handleMessage(
       userId,
       message,
       'workflow' as any,
       undefined,
-      step.skillName ? { forceSkill: step.skillName } : undefined
+      Object.keys(handleOptions).length > 0 ? handleOptions : undefined
     );
 
     return { response: result.response };
