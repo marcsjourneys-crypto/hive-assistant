@@ -233,16 +233,23 @@ export default function WorkflowsPage() {
             </span>
             <button onClick={() => setRunResult(null)} className="text-gray-400 hover:text-gray-600">&times;</button>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-2">
             {runResult.steps.map(step => (
-              <div key={step.id} className="flex items-center gap-2 text-sm">
-                <span className={`inline-block w-2 h-2 rounded-full ${
-                  step.status === 'completed' ? 'bg-green-500' :
-                  step.status === 'failed' ? 'bg-red-500' : 'bg-gray-400'
-                }`} />
-                <span className="font-mono text-xs">{step.id}</span>
-                <span className="text-gray-500">({step.durationMs}ms)</span>
-                {step.error && <span className="text-red-600 text-xs">{step.error}</span>}
+              <div key={step.id}>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className={`inline-block w-2 h-2 rounded-full ${
+                    step.status === 'completed' ? 'bg-green-500' :
+                    step.status === 'failed' ? 'bg-red-500' : 'bg-gray-400'
+                  }`} />
+                  <span className="font-mono text-xs">{step.id}</span>
+                  <span className="text-gray-500">({step.durationMs}ms)</span>
+                  {step.error && <span className="text-red-600 text-xs">{step.error}</span>}
+                </div>
+                {step.output != null && (
+                  <pre className="ml-4 mt-1 p-2 bg-white rounded border border-gray-200 text-xs font-mono text-gray-700 overflow-auto max-h-48">
+                    {JSON.stringify(step.output, null, 2)}
+                  </pre>
+                )}
               </div>
             ))}
           </div>
