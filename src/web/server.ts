@@ -16,6 +16,8 @@ import { createLogsRoutes } from './routes/logs';
 import { createChatRoutes } from './routes/chat';
 import { Gateway } from '../core/gateway';
 import { SkillResolver } from '../services/skill-resolver';
+import { ScriptRunner } from '../services/script-runner';
+import { createScriptsRoutes } from './routes/scripts';
 
 export interface WebServerConfig {
   db: IDatabase;
@@ -23,6 +25,7 @@ export interface WebServerConfig {
   host: string;
   gateway?: Gateway;
   skillResolver?: SkillResolver;
+  scriptRunner?: ScriptRunner;
 }
 
 /**
@@ -48,6 +51,9 @@ export function createWebServer(config: WebServerConfig): express.Express {
   app.use('/api/channels', createChannelsRoutes());
   app.use('/api/admin', createAdminRoutes(db));
   app.use('/api/logs', createLogsRoutes(db));
+  if (config.scriptRunner) {
+    app.use('/api/scripts', createScriptsRoutes(db, config.scriptRunner));
+  }
   if (config.gateway) {
     app.use('/api/chat', createChatRoutes(db, config.gateway));
   }

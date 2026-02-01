@@ -8,6 +8,7 @@ import Chat from './pages/Chat';
 import SoulEditor from './pages/SoulEditor';
 import ProfileEditor from './pages/ProfileEditor';
 import Skills from './pages/Skills';
+import ScriptsPage from './pages/Scripts';
 import Channels from './pages/Channels';
 import Users from './pages/admin/Users';
 import System from './pages/admin/System';
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="settings/profile" element={<ProfileEditor />} />
         <Route path="settings/skills" element={<Skills />} />
         <Route path="settings/channels" element={<Channels />} />
+        <Route path="automation/scripts" element={<ScriptsPage />} />
 
         <Route path="admin/users" element={<AdminRoute><Users /></AdminRoute>} />
         <Route path="admin/system" element={<AdminRoute><System /></AdminRoute>} />

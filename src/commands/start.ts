@@ -16,6 +16,7 @@ import { createWebServer } from '../web/server';
 import { UserSettingsService } from '../services/user-settings';
 import { SkillResolver } from '../services/skill-resolver';
 import { FileAccessService } from '../services/file-access';
+import { ScriptRunner } from '../services/script-runner';
 
 interface StartOptions {
   daemon?: boolean;
@@ -100,6 +101,9 @@ export async function startCommand(options: StartOptions): Promise<void> {
     // 7b. Create file access service (sandboxed per-user file reading)
     const fileAccess = new FileAccessService();
 
+    // 7c. Create script runner (Python subprocess execution)
+    const scriptRunner = new ScriptRunner();
+
     // 8. Create gateway
     const gateway = new Gateway({
       db,
@@ -160,7 +164,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
     if (config.web?.enabled) {
       const webPort = config.web.port || 3000;
       const webHost = config.web.host || '0.0.0.0';
-      const app = createWebServer({ db, port: webPort, host: webHost, gateway, skillResolver });
+      const app = createWebServer({ db, port: webPort, host: webHost, gateway, skillResolver, scriptRunner });
       webServer = app.listen(webPort, webHost, () => {
         console.log(chalk.green(`  Web dashboard: http://${webHost === '0.0.0.0' ? 'localhost' : webHost}:${webPort}`));
       });

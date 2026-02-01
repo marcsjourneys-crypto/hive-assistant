@@ -130,6 +130,74 @@ export const skills = {
     request<{ success: boolean }>(`/skills/${id}`, { method: 'DELETE' }),
 };
 
+// Scripts
+export interface ScriptInfo {
+  id: string;
+  ownerId: string;
+  name: string;
+  description: string;
+  language: string;
+  inputSchema: Record<string, string>;
+  outputSchema: Record<string, string>;
+  isConnector: boolean;
+  isShared: boolean;
+  approved: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScriptDetail extends ScriptInfo {
+  sourceCode: string;
+}
+
+export interface ScriptTestResult {
+  success: boolean;
+  output?: Record<string, unknown>;
+  error?: string;
+  durationMs: number;
+}
+
+export const scripts = {
+  list: () => request<ScriptInfo[]>('/scripts'),
+  get: (id: string) => request<ScriptDetail>(`/scripts/${id}`),
+  create: (script: {
+    name: string;
+    description: string;
+    sourceCode: string;
+    inputSchema?: Record<string, string>;
+    outputSchema?: Record<string, string>;
+    isConnector?: boolean;
+  }) =>
+    request<ScriptDetail>('/scripts', {
+      method: 'POST',
+      body: JSON.stringify(script),
+    }),
+  update: (id: string, updates: {
+    name?: string;
+    description?: string;
+    sourceCode?: string;
+    inputSchema?: Record<string, string>;
+    outputSchema?: Record<string, string>;
+    isConnector?: boolean;
+  }) =>
+    request<ScriptDetail>(`/scripts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/scripts/${id}`, { method: 'DELETE' }),
+  test: (id: string, inputs: Record<string, unknown> = {}) =>
+    request<ScriptTestResult>(`/scripts/${id}/test`, {
+      method: 'POST',
+      body: JSON.stringify({ inputs }),
+    }),
+  testCode: (sourceCode: string, inputs: Record<string, unknown> = {}) =>
+    request<ScriptTestResult>('/scripts/test-code', {
+      method: 'POST',
+      body: JSON.stringify({ sourceCode, inputs }),
+    }),
+};
+
 // Usage
 export interface UsageSummary {
   period: string;

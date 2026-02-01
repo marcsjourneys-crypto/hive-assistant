@@ -10,6 +10,10 @@ const navItems = [
   { to: '/settings/channels', label: 'Channels', icon: '📱' },
 ];
 
+const automationItems = [
+  { to: '/automation/scripts', label: 'Scripts', icon: '🐍' },
+];
+
 const adminItems = [
   { to: '/admin/users', label: 'Users', icon: '👥' },
   { to: '/admin/system', label: 'System', icon: '⚙️' },
@@ -40,6 +44,25 @@ export function Layout() {
               key={item.to}
               to={item.to}
               end={item.to === '/'}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                  isActive
+                    ? 'bg-gray-700 text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`
+              }
+            >
+              <span>{item.icon}</span>
+              {item.label}
+            </NavLink>
+          ))}
+
+          <div className="border-t border-gray-700 my-3" />
+          <p className="text-xs text-gray-500 uppercase tracking-wider px-3 mb-2">Automation</p>
+          {automationItems.map(item => (
+            <NavLink
+              key={item.to}
+              to={item.to}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                   isActive
