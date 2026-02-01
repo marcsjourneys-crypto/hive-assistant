@@ -215,6 +215,26 @@ export class WorkflowEngine {
   }
 
   /**
+   * Format a step input value for readable inclusion in a prompt.
+   * Arrays of objects are presented as itemized lists instead of raw JSON.
+   */
+  private formatInputValue(value: unknown): string {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+      return value.map((item, i) => {
+        const fields = Object.entries(item as Record<string, unknown>)
+          .filter(([, v]) => v != null)
+          .map(([k, v]) => `  ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+        return `[${i + 1}]\n${fields.join('\n')}`;
+      }).join('\n');
+    }
+    if (typeof value === 'object' && value !== null) {
+      return JSON.stringify(value, null, 2);
+    }
+    return String(value);
+  }
+
+  /**
    * Execute a script step via ScriptRunner.
    */
   private async executeScriptStep(
@@ -253,16 +273,23 @@ export class WorkflowEngine {
     }
 
     // Build a message from the step inputs.
-    // If there's a "message" input, use it directly.
-    // Otherwise, combine all inputs into a prompt.
+    // If there's a "message" input, use it as the prompt — but always append
+    // other inputs so the model sees the full data from previous steps.
     let message: string;
+    const otherInputs = Object.entries(inputs)
+      .filter(([k]) => k !== 'message')
+      .map(([k, v]) => `${k}:\n${this.formatInputValue(v)}`)
+      .join('\n\n');
+
     if (typeof inputs.message === 'string') {
-      message = inputs.message;
+      message = otherInputs
+        ? `${inputs.message}\n\n${otherInputs}`
+        : inputs.message;
     } else {
-      const inputDesc = Object.entries(inputs)
-        .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
-        .join('\n');
-      message = `Process the following data:\n${inputDesc}`;
+      const allInputs = Object.entries(inputs)
+        .map(([k, v]) => `${k}:\n${this.formatInputValue(v)}`)
+        .join('\n\n');
+      message = `Process the following data:\n\n${allInputs}`;
     }
 
     const result = await this.gateway.handleMessage(
