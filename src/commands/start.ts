@@ -127,8 +127,8 @@ export async function startCommand(options: StartOptions): Promise<void> {
       fileAccess
     });
 
-    // 8b. Create workflow engine (requires gateway for skill steps)
-    const workflowEngine = new WorkflowEngine(scriptRunner, gateway, db);
+    // 8b. Create workflow engine (requires gateway for skill steps, vault for credential inputs)
+    const workflowEngine = new WorkflowEngine(scriptRunner, gateway, db, credentialVault);
 
     // 8c. Create workflow scheduler
     const workflowScheduler = new WorkflowScheduler(db, workflowEngine);

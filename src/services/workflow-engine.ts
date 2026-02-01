@@ -1,13 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Database } from '../db/interface';
 import { ScriptRunner } from './script-runner';
+import { CredentialVault } from './credential-vault';
 import { Gateway } from '../core/gateway';
 
 /** Input mapping for a workflow step. */
 export interface InputMapping {
-  type: 'static' | 'ref';
+  type: 'static' | 'ref' | 'credential';
   value?: unknown;
   source?: string; // e.g., "step1.output.rows"
+  credentialName?: string; // credential name to resolve from vault
 }
 
 /** A single step in a workflow definition. */
@@ -48,7 +50,8 @@ export class WorkflowEngine {
   constructor(
     private scriptRunner: ScriptRunner,
     private gateway: Gateway | undefined,
-    private db: Database
+    private db: Database,
+    private credentialVault?: CredentialVault
   ) {}
 
   /**
@@ -86,8 +89,8 @@ export class WorkflowEngine {
       const stepStart = Date.now();
 
       try {
-        // Resolve inputs from static values or refs to previous step outputs
-        const resolvedInputs = this.resolveInputs(step.inputs, stepOutputs);
+        // Resolve inputs from static values, refs to previous step outputs, or credentials
+        const resolvedInputs = await this.resolveInputs(step.inputs, stepOutputs, userId);
 
         let output: unknown;
 
@@ -160,12 +163,13 @@ export class WorkflowEngine {
   }
 
   /**
-   * Resolve input mappings for a step using previous step outputs.
+   * Resolve input mappings for a step using previous step outputs and credentials.
    */
-  private resolveInputs(
+  private async resolveInputs(
     inputs: Record<string, InputMapping>,
-    stepOutputs: Map<string, unknown>
-  ): Record<string, unknown> {
+    stepOutputs: Map<string, unknown>,
+    userId: string
+  ): Promise<Record<string, unknown>> {
     const resolved: Record<string, unknown> = {};
 
     for (const [key, mapping] of Object.entries(inputs)) {
@@ -173,6 +177,15 @@ export class WorkflowEngine {
         resolved[key] = mapping.value;
       } else if (mapping.type === 'ref' && mapping.source) {
         resolved[key] = this.resolveRef(mapping.source, stepOutputs);
+      } else if (mapping.type === 'credential' && mapping.credentialName) {
+        if (!this.credentialVault) {
+          throw new Error(`Credential input "${key}" requires credential vault`);
+        }
+        const value = await this.credentialVault.resolveByName(userId, mapping.credentialName);
+        if (value === null) {
+          throw new Error(`Credential "${mapping.credentialName}" not found`);
+        }
+        resolved[key] = value;
       }
     }
 

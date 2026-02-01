@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { workflows, scripts, skills, WorkflowInfo, WorkflowRunResult, ScriptInfo, SkillInfo } from '../api';
+import { workflows, scripts, skills, credentials, WorkflowInfo, WorkflowRunResult, ScriptInfo, SkillInfo, CredentialInfo } from '../api';
 
 interface InputMapping {
-  type: 'static' | 'ref';
+  type: 'static' | 'ref' | 'credential';
   value?: string;
   source?: string;
+  credentialName?: string;
 }
 
 interface StepDef {
@@ -38,6 +39,7 @@ export default function WorkflowsPage() {
   const [workflowList, setWorkflowList] = useState<WorkflowInfo[]>([]);
   const [scriptList, setScriptList] = useState<ScriptInfo[]>([]);
   const [skillList, setSkillList] = useState<SkillInfo[]>([]);
+  const [credentialList, setCredentialList] = useState<CredentialInfo[]>([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState<string | null>(null);
@@ -53,14 +55,16 @@ export default function WorkflowsPage() {
 
   const loadData = async () => {
     try {
-      const [w, s, sk] = await Promise.all([
+      const [w, s, sk, creds] = await Promise.all([
         workflows.list(),
         scripts.list(),
-        skills.list()
+        skills.list(),
+        credentials.list().catch(() => [] as CredentialInfo[])
       ]);
       setWorkflowList(w);
       setScriptList(s);
       setSkillList(sk);
+      setCredentialList(creds);
     } catch (err: any) {
       setError(err.message);
     }
@@ -351,18 +355,22 @@ export default function WorkflowsPage() {
                           <span className="text-xs font-mono w-24 truncate" title={key}>{key}</span>
                           <select
                             value={mapping.type}
-                            onChange={e => updateInput(idx, key, {
-                              ...mapping,
-                              type: e.target.value as 'static' | 'ref',
-                              value: e.target.value === 'static' ? mapping.value : undefined,
-                              source: e.target.value === 'ref' ? mapping.source : undefined
-                            })}
+                            onChange={e => {
+                              const newType = e.target.value as 'static' | 'ref' | 'credential';
+                              updateInput(idx, key, {
+                                type: newType,
+                                value: newType === 'static' ? mapping.value : undefined,
+                                source: newType === 'ref' ? mapping.source : undefined,
+                                credentialName: newType === 'credential' ? mapping.credentialName : undefined
+                              });
+                            }}
                             className="border border-gray-300 rounded px-1.5 py-1 text-xs bg-white"
                           >
                             <option value="static">Static</option>
                             <option value="ref">From step</option>
+                            <option value="credential">Credential</option>
                           </select>
-                          {mapping.type === 'static' ? (
+                          {mapping.type === 'static' && (
                             <input
                               type="text"
                               value={mapping.value || ''}
@@ -370,7 +378,8 @@ export default function WorkflowsPage() {
                               className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs font-mono"
                               placeholder="value"
                             />
-                          ) : (
+                          )}
+                          {mapping.type === 'ref' && (
                             <input
                               type="text"
                               value={mapping.source || ''}
@@ -378,6 +387,18 @@ export default function WorkflowsPage() {
                               className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs font-mono"
                               placeholder={`e.g., ${getPreviousSteps(idx)[0] || 'step1'}.output.result`}
                             />
+                          )}
+                          {mapping.type === 'credential' && (
+                            <select
+                              value={mapping.credentialName || ''}
+                              onChange={e => updateInput(idx, key, { ...mapping, credentialName: e.target.value })}
+                              className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+                            >
+                              <option value="">Select credential...</option>
+                              {credentialList.map(c => (
+                                <option key={c.id} value={c.name}>{c.name} ({c.service})</option>
+                              ))}
+                            </select>
                           )}
                           <button
                             onClick={() => removeInput(idx, key)}
