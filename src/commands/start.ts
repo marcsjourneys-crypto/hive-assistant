@@ -24,6 +24,7 @@ import { CredentialVault } from '../services/credential-vault';
 import { NotificationSender } from '../services/notification-sender';
 import { WorkflowTriggerService } from '../services/workflow-trigger';
 import { ReminderScheduler } from '../services/reminder-scheduler';
+import { seedBuiltinScripts } from '../services/seed-scripts';
 
 interface StartOptions {
   daemon?: boolean;
@@ -89,6 +90,9 @@ export async function startCommand(options: StartOptions): Promise<void> {
     spinner.text = 'Connecting to database...';
     const db = await getDatabase(config.database);
 
+    // 2b. Seed built-in scripts (csv-diff, etc.)
+    await seedBuiltinScripts(db);
+
     // 3. Create orchestrator
     spinner.text = 'Initializing orchestrator...';
     const orchestrator = createOrchestrator();
@@ -105,8 +109,8 @@ export async function startCommand(options: StartOptions): Promise<void> {
     // 7. Create skill resolver (per-user skill resolution)
     const skillResolver = new SkillResolver(db, path.join(config.dataDir, 'skills'));
 
-    // 7b. Create file access service (sandboxed per-user file reading)
-    const fileAccess = new FileAccessService();
+    // 7b. Create file access service (sandboxed per-user file reading, with db for versioning)
+    const fileAccess = new FileAccessService(db);
 
     // 7c. Create script runner (Python subprocess execution)
     const scriptRunner = new ScriptRunner();
@@ -127,7 +131,8 @@ export async function startCommand(options: StartOptions): Promise<void> {
       summarizer,
       userSettings,
       skillResolver,
-      fileAccess
+      fileAccess,
+      scriptRunner
     });
 
     // 8b. Create notification sender (for workflow notify steps)

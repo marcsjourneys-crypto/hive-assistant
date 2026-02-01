@@ -638,6 +638,8 @@ export interface FileInfoResponse {
   name: string;
   size: number;
   modified: string;
+  tracked?: boolean;
+  hasPrev?: boolean;
 }
 
 export interface FileUploadResult {
@@ -670,4 +672,68 @@ export const files = {
   },
   delete: (filename: string) =>
     request<{ success: boolean }>(`/files/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
+  setTracked: (filename: string, tracked: boolean) =>
+    request<{ filename: string; tracked: boolean }>(`/files/${encodeURIComponent(filename)}/track`, {
+      method: 'PUT',
+      body: JSON.stringify({ tracked }),
+    }),
+};
+
+// Templates
+export interface TemplateParameter {
+  key: string;
+  label: string;
+  type: 'text' | 'file' | 'channel' | 'credential' | 'select';
+  description: string;
+  default?: string;
+  options?: string[];
+}
+
+export interface TemplateInfo {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  stepsJson: string;
+  parametersJson: string;
+  createdBy: string;
+  isPublished: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const templates = {
+  list: () => request<TemplateInfo[]>('/templates'),
+  get: (id: string) => request<TemplateInfo>(`/templates/${id}`),
+  create: (template: {
+    name: string;
+    description: string;
+    category: string;
+    stepsJson: unknown[];
+    parametersJson: TemplateParameter[];
+    isPublished?: boolean;
+  }) =>
+    request<TemplateInfo>('/templates', {
+      method: 'POST',
+      body: JSON.stringify(template),
+    }),
+  update: (id: string, updates: {
+    name?: string;
+    description?: string;
+    category?: string;
+    stepsJson?: unknown[];
+    parametersJson?: TemplateParameter[];
+    isPublished?: boolean;
+  }) =>
+    request<TemplateInfo>(`/templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/templates/${id}`, { method: 'DELETE' }),
+  use: (id: string, parameters: Record<string, string>) =>
+    request<WorkflowInfo>(`/templates/${id}/use`, {
+      method: 'POST',
+      body: JSON.stringify({ parameters }),
+    }),
 };

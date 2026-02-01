@@ -19,7 +19,9 @@ import {
   Schedule,
   UserCredential,
   ChannelIdentity,
-  Reminder
+  Reminder,
+  FileMetadata,
+  WorkflowTemplate
 } from './interface';
 
 export class SQLiteDatabase implements IDatabase {
@@ -256,6 +258,27 @@ export class SQLiteDatabase implements IDatabase {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         completed_at TEXT,
         FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS file_metadata (
+        user_id TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        tracked INTEGER NOT NULL DEFAULT 0,
+        last_uploaded_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, filename)
+      );
+
+      CREATE TABLE IF NOT EXISTS workflow_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        category TEXT DEFAULT '',
+        steps_json TEXT NOT NULL DEFAULT '[]',
+        parameters_json TEXT NOT NULL DEFAULT '[]',
+        created_by TEXT NOT NULL,
+        is_published INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
@@ -1028,6 +1051,95 @@ export class SQLiteDatabase implements IDatabase {
     return rows.map(row => this.mapReminder(row));
   }
 
+  // File Metadata
+  async getFileMetadata(userId: string, filename: string): Promise<FileMetadata | null> {
+    const row = this.db.prepare(
+      'SELECT * FROM file_metadata WHERE user_id = ? AND filename = ?'
+    ).get(userId, filename) as any;
+    if (!row) return null;
+    return this.mapFileMetadata(row);
+  }
+
+  async setFileTracked(userId: string, filename: string, tracked: boolean): Promise<void> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO file_metadata (user_id, filename, tracked, last_uploaded_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id, filename) DO UPDATE SET tracked = ?
+    `).run(userId, filename, tracked ? 1 : 0, now, tracked ? 1 : 0);
+  }
+
+  async getTrackedFiles(userId: string): Promise<FileMetadata[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM file_metadata WHERE user_id = ? AND tracked = 1 ORDER BY filename ASC'
+    ).all(userId) as any[];
+    return rows.map(row => this.mapFileMetadata(row));
+  }
+
+  async upsertFileMetadata(userId: string, filename: string, tracked: boolean): Promise<void> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO file_metadata (user_id, filename, tracked, last_uploaded_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id, filename) DO UPDATE SET last_uploaded_at = ?
+    `).run(userId, filename, tracked ? 1 : 0, now, now);
+  }
+
+  // Workflow Templates
+  async getTemplate(templateId: string): Promise<WorkflowTemplate | null> {
+    const row = this.db.prepare('SELECT * FROM workflow_templates WHERE id = ?').get(templateId) as any;
+    if (!row) return null;
+    return this.mapWorkflowTemplate(row);
+  }
+
+  async getTemplates(): Promise<WorkflowTemplate[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM workflow_templates ORDER BY category ASC, name ASC'
+    ).all() as any[];
+    return rows.map(row => this.mapWorkflowTemplate(row));
+  }
+
+  async getPublishedTemplates(): Promise<WorkflowTemplate[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM workflow_templates WHERE is_published = 1 ORDER BY category ASC, name ASC'
+    ).all() as any[];
+    return rows.map(row => this.mapWorkflowTemplate(row));
+  }
+
+  async createTemplate(template: Omit<WorkflowTemplate, 'createdAt' | 'updatedAt'>): Promise<WorkflowTemplate> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO workflow_templates (id, name, description, category, steps_json, parameters_json, created_by, is_published, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      template.id, template.name, template.description, template.category,
+      template.stepsJson, template.parametersJson, template.createdBy,
+      template.isPublished ? 1 : 0, now, now
+    );
+    return this.getTemplate(template.id) as Promise<WorkflowTemplate>;
+  }
+
+  async updateTemplate(templateId: string, updates: Partial<WorkflowTemplate>): Promise<WorkflowTemplate> {
+    const now = new Date().toISOString();
+    const sets: string[] = ['updated_at = ?'];
+    const values: any[] = [now];
+
+    if (updates.name !== undefined) { sets.push('name = ?'); values.push(updates.name); }
+    if (updates.description !== undefined) { sets.push('description = ?'); values.push(updates.description); }
+    if (updates.category !== undefined) { sets.push('category = ?'); values.push(updates.category); }
+    if (updates.stepsJson !== undefined) { sets.push('steps_json = ?'); values.push(updates.stepsJson); }
+    if (updates.parametersJson !== undefined) { sets.push('parameters_json = ?'); values.push(updates.parametersJson); }
+    if (updates.isPublished !== undefined) { sets.push('is_published = ?'); values.push(updates.isPublished ? 1 : 0); }
+
+    values.push(templateId);
+    this.db.prepare(`UPDATE workflow_templates SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    return this.getTemplate(templateId) as Promise<WorkflowTemplate>;
+  }
+
+  async deleteTemplate(templateId: string): Promise<void> {
+    this.db.prepare('DELETE FROM workflow_templates WHERE id = ?').run(templateId);
+  }
+
   // Channel Identities
   async getChannelIdentity(id: string): Promise<ChannelIdentity | null> {
     const row = this.db.prepare('SELECT * FROM channel_identities WHERE id = ?').get(id) as any;
@@ -1273,6 +1385,30 @@ export class SQLiteDatabase implements IDatabase {
       completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
       dueAt: row.due_at ? new Date(row.due_at) : undefined,
       notifiedAt: row.notified_at ? new Date(row.notified_at) : undefined
+    };
+  }
+
+  private mapWorkflowTemplate(row: any): WorkflowTemplate {
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description || '',
+      category: row.category || '',
+      stepsJson: row.steps_json,
+      parametersJson: row.parameters_json,
+      createdBy: row.created_by,
+      isPublished: row.is_published === 1,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
+    };
+  }
+
+  private mapFileMetadata(row: any): FileMetadata {
+    return {
+      userId: row.user_id,
+      filename: row.filename,
+      tracked: row.tracked === 1,
+      lastUploadedAt: new Date(row.last_uploaded_at)
     };
   }
 

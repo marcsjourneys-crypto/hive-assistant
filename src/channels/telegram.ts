@@ -159,8 +159,8 @@ export class TelegramChannel {
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      // Save to user's files directory
-      const savedName = await this.fileAccess.saveFile(userId, filename, buffer);
+      // Save to user's files directory (with versioning if tracked)
+      const savedName = await this.fileAccess.saveFileWithVersioning(userId, filename, buffer);
 
       // Try text extraction for PDF/Excel
       let extractedName: string | null = null;

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { FileAccessService } from '../../services/file-access';
+import { Database as IDatabase } from '../../db/interface';
 import { requireAuth } from '../middleware/auth';
 
 const MAX_UPLOAD_SIZE = 1024 * 1024; // 1MB
@@ -11,7 +12,7 @@ const upload = multer({
   limits: { fileSize: MAX_UPLOAD_SIZE }
 });
 
-export function createFilesRoutes(fileAccess: FileAccessService): Router {
+export function createFilesRoutes(fileAccess: FileAccessService, db: IDatabase): Router {
   const router = Router();
 
   router.use(requireAuth);
@@ -22,8 +23,20 @@ export function createFilesRoutes(fileAccess: FileAccessService): Router {
    */
   router.get('/', async (req: Request, res: Response) => {
     try {
-      const files = await fileAccess.listFiles(req.user!.userId);
-      res.json(files);
+      const userId = req.user!.userId;
+      const files = await fileAccess.listFiles(userId);
+
+      // Enrich with tracked metadata
+      const enriched = await Promise.all(files.map(async (f) => {
+        const meta = await db.getFileMetadata(userId, f.name);
+        return {
+          ...f,
+          tracked: meta?.tracked ?? false,
+          hasPrev: fileAccess.hasPreviousVersion(userId, f.name)
+        };
+      }));
+
+      res.json(enriched);
     } catch (error: any) {
       console.error('[Files] List error:', error.message);
       res.status(500).json({ error: 'Failed to list files' });
@@ -45,8 +58,8 @@ export function createFilesRoutes(fileAccess: FileAccessService): Router {
       const userId = req.user!.userId;
       const originalName = req.file.originalname;
 
-      // Save the file
-      const savedName = await fileAccess.saveFile(userId, originalName, req.file.buffer);
+      // Save the file (with versioning if tracked)
+      const savedName = await fileAccess.saveFileWithVersioning(userId, originalName, req.file.buffer);
 
       // Try text extraction for PDF/Excel
       let extractedName: string | null = null;
@@ -95,6 +108,25 @@ export function createFilesRoutes(fileAccess: FileAccessService): Router {
       console.error('[Files] Delete error:', error.message);
       const status = error.message.includes('not found') ? 404 : 400;
       res.status(status).json({ error: error.message });
+    }
+  });
+
+  /**
+   * PUT /api/files/:filename/track
+   * Toggle change tracking for a file.
+   */
+  router.put('/:filename/track', async (req: Request, res: Response) => {
+    try {
+      const { tracked } = req.body;
+      if (typeof tracked !== 'boolean') {
+        res.status(400).json({ error: 'tracked must be a boolean' });
+        return;
+      }
+      await db.setFileTracked(req.user!.userId, req.params.filename as string, tracked);
+      res.json({ filename: req.params.filename, tracked });
+    } catch (error: any) {
+      console.error('[Files] Track toggle error:', error.message);
+      res.status(500).json({ error: 'Failed to update tracking' });
     }
   });
 

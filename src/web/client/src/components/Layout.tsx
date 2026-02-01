@@ -14,6 +14,7 @@ const navItems = [
 
 const automationItems = [
   { to: '/settings/skills', label: 'Skills', icon: '⚡' },
+  { to: '/automation/templates', label: 'Templates', icon: '📋' },
   { to: '/automation/scripts', label: 'Scripts', icon: '🐍' },
   { to: '/automation/workflows', label: 'Workflows', icon: '🔗' },
   { to: '/automation/schedules', label: 'Schedules', icon: '⏰' },

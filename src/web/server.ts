@@ -28,6 +28,7 @@ import { createCredentialsRoutes } from './routes/credentials';
 import { createChannelIdentitiesRoutes } from './routes/channel-identities';
 import { createRemindersRoutes } from './routes/reminders';
 import { createFilesRoutes } from './routes/files';
+import { createTemplatesRoutes } from './routes/templates';
 import { FileAccessService } from '../services/file-access';
 import { getToolsMeta } from '../core/tools';
 
@@ -81,7 +82,8 @@ export function createWebServer(config: WebServerConfig): express.Express {
   }
   app.use('/api/channel-identities', createChannelIdentitiesRoutes(db));
   app.use('/api/reminders', createRemindersRoutes(db));
-  app.use('/api/files', createFilesRoutes(new FileAccessService()));
+  app.use('/api/files', createFilesRoutes(new FileAccessService(db), db));
+  app.use('/api/templates', createTemplatesRoutes(db, config.workflowEngine));
   app.get('/api/tools', (_req, res) => { res.json(getToolsMeta()); });
   if (config.gateway) {
     app.use('/api/chat', createChatRoutes(db, config.gateway));

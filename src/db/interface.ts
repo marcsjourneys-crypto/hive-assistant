@@ -159,6 +159,26 @@ export interface Reminder {
   notifiedAt?: Date;
 }
 
+export interface FileMetadata {
+  userId: string;
+  filename: string;
+  tracked: boolean;
+  lastUploadedAt: Date;
+}
+
+export interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  stepsJson: string;
+  parametersJson: string;
+  createdBy: string;
+  isPublished: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface DebugLog {
   id: string;
   userId: string;
@@ -293,6 +313,20 @@ export interface Database {
   getDueReminders(): Promise<Reminder[]>;
   updateReminder(id: string, updates: Partial<Pick<Reminder, 'text' | 'isComplete' | 'dueAt' | 'notifiedAt'>>): Promise<Reminder>;
   deleteReminder(id: string): Promise<void>;
+
+  // File Metadata
+  getFileMetadata(userId: string, filename: string): Promise<FileMetadata | null>;
+  setFileTracked(userId: string, filename: string, tracked: boolean): Promise<void>;
+  getTrackedFiles(userId: string): Promise<FileMetadata[]>;
+  upsertFileMetadata(userId: string, filename: string, tracked: boolean): Promise<void>;
+
+  // Workflow Templates
+  getTemplate(templateId: string): Promise<WorkflowTemplate | null>;
+  getTemplates(): Promise<WorkflowTemplate[]>;
+  getPublishedTemplates(): Promise<WorkflowTemplate[]>;
+  createTemplate(template: Omit<WorkflowTemplate, 'createdAt' | 'updatedAt'>): Promise<WorkflowTemplate>;
+  updateTemplate(templateId: string, updates: Partial<WorkflowTemplate>): Promise<WorkflowTemplate>;
+  deleteTemplate(templateId: string): Promise<void>;
 
   // Channel Identities
   getChannelIdentity(id: string): Promise<ChannelIdentity | null>;

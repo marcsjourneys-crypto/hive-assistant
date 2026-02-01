@@ -11,6 +11,7 @@ import { getConfig } from '../utils/config';
 import { ensureUserWorkspace } from '../utils/user-workspace';
 import { FileAccessService } from '../services/file-access';
 import { WorkflowTriggerService } from '../services/workflow-trigger';
+import { ScriptRunner } from '../services/script-runner';
 import { getTools, ToolContext } from './tools';
 
 /** Configuration for creating a Gateway instance. */
@@ -25,6 +26,7 @@ export interface GatewayConfig {
   skillResolver?: SkillResolver;
   fileAccess?: FileAccessService;
   workflowTrigger?: WorkflowTriggerService;
+  scriptRunner?: ScriptRunner;
 }
 
 /** Result returned from handleMessage. */
@@ -57,6 +59,7 @@ export class Gateway {
   private skillResolver?: SkillResolver;
   private fileAccess?: FileAccessService;
   private workflowTrigger?: WorkflowTriggerService;
+  private scriptRunner?: ScriptRunner;
   private skillsCache: SkillMeta[] | null = null;
 
   constructor(config: GatewayConfig) {
@@ -70,6 +73,7 @@ export class Gateway {
     this.skillResolver = config.skillResolver;
     this.fileAccess = config.fileAccess;
     this.workflowTrigger = config.workflowTrigger;
+    this.scriptRunner = config.scriptRunner;
   }
 
   /**
@@ -290,9 +294,10 @@ export class Gateway {
       // Resolve tool names to definitions if provided.
       // Pass user context so user-scoped tools (e.g. manage_reminders) get bound correctly.
       // Always include manage_reminders — the AI naturally decides when to use it.
-      const toolContext: ToolContext = { userId, db: this.db };
+      const toolContext: ToolContext = { userId, db: this.db, scriptRunner: this.scriptRunner };
       const toolNames = new Set(options?.tools || []);
       toolNames.add('manage_reminders');
+      toolNames.add('run_script');
       const resolvedTools = getTools([...toolNames], toolContext);
       if (resolvedTools.length > 0) {
         executeOptions.tools = resolvedTools;

@@ -147,10 +147,43 @@ export default function FilesPage() {
                   <p className="text-xs text-gray-400">
                     {formatSize(file.size)} · {new Date(file.modified).toLocaleDateString()}
                     {isExtractedFile(file.name) && ' · Auto-extracted'}
+                    {file.tracked && (
+                      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-hive-50 text-hive-700 border border-hive-200">
+                        Tracked
+                      </span>
+                    )}
+                    {file.hasPrev && (
+                      <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                        Has prev
+                      </span>
+                    )}
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Track changes toggle */}
+                  {!isExtractedFile(file.name) && (
+                    <label className="flex items-center gap-1.5 cursor-pointer group" title="Track changes between uploads">
+                      <input
+                        type="checkbox"
+                        checked={file.tracked ?? false}
+                        onChange={async (e) => {
+                          const tracked = e.target.checked;
+                          try {
+                            await files.setTracked(file.name, tracked);
+                            setFileList(prev => prev.map(f =>
+                              f.name === file.name ? { ...f, tracked } : f
+                            ));
+                          } catch (err: any) {
+                            setError(err.message);
+                          }
+                        }}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-hive-500 focus:ring-hive-400"
+                      />
+                      <span className="text-xs text-gray-400 group-hover:text-gray-600 transition-colors">Track</span>
+                    </label>
+                  )}
+
                   {isTextFile(file.name) && (
                     <button
                       onClick={() => handlePreview(file.name)}

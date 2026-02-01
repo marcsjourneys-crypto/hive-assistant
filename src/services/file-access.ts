@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getUserWorkspacePath } from '../utils/user-workspace';
 import { safePath, sanitizeFilename } from '../utils/path-safety';
+import { Database as IDatabase } from '../db/interface';
 
 /** Info about a file in a user's files directory. */
 export interface FileInfo {
@@ -35,8 +36,15 @@ const UPLOAD_EXTENSIONS = new Set([
  * All paths are validated to prevent traversal attacks.
  */
 export class FileAccessService {
+  private db?: IDatabase;
+
+  constructor(db?: IDatabase) {
+    this.db = db;
+  }
+
   /**
    * List files in a user's files directory (non-recursive).
+   * Excludes internal .prev backup files.
    */
   async listFiles(userId: string): Promise<FileInfo[]> {
     const filesDir = this.getFilesDir(userId);
@@ -52,6 +60,7 @@ export class FileAccessService {
     const files: FileInfo[] = [];
     for (const entry of entries) {
       if (!entry.isFile()) continue;
+      if (entry.name.endsWith('.prev')) continue;
 
       try {
         const filePath = path.join(filesDir, entry.name);
@@ -233,6 +242,80 @@ export class FileAccessService {
 
     fs.writeFileSync(extractedPath, csvParts.join('\n\n'));
     return extractedName;
+  }
+
+  /**
+   * Save a file with versioning support.
+   * If the file is tracked, rotates current → .prev before saving.
+   * Updates file_metadata in the database.
+   */
+  async saveFileWithVersioning(userId: string, filename: string, buffer: Buffer): Promise<string> {
+    const sanitized = sanitizeFilename(filename);
+    if (!sanitized) {
+      throw new Error('Invalid filename');
+    }
+
+    const ext = path.extname(sanitized).toLowerCase();
+    if (ext && !UPLOAD_EXTENSIONS.has(ext)) {
+      throw new Error(`File type not allowed: ${ext}`);
+    }
+
+    if (buffer.length > MAX_UPLOAD_SIZE) {
+      throw new Error(`File too large: ${(buffer.length / 1024).toFixed(0)}KB (max ${MAX_UPLOAD_SIZE / 1024}KB)`);
+    }
+
+    const filesDir = this.getFilesDir(userId);
+    fs.mkdirSync(filesDir, { recursive: true });
+
+    const resolved = safePath(filesDir, sanitized);
+    if (!resolved) {
+      throw new Error('Access denied: path outside user directory');
+    }
+
+    // Check if file is tracked and exists — rotate to .prev
+    if (this.db) {
+      const meta = await this.db.getFileMetadata(userId, sanitized);
+      if (meta?.tracked && fs.existsSync(resolved)) {
+        const prevPath = resolved + '.prev';
+        fs.copyFileSync(resolved, prevPath);
+      }
+      await this.db.upsertFileMetadata(userId, sanitized, meta?.tracked ?? false);
+    }
+
+    fs.writeFileSync(resolved, buffer);
+    return sanitized;
+  }
+
+  /**
+   * Read the previous version of a file (.prev backup).
+   * Returns the content or null if no previous version exists.
+   */
+  async readPreviousVersion(userId: string, filename: string): Promise<string | null> {
+    const filesDir = this.getFilesDir(userId);
+    const prevName = filename + '.prev';
+    const resolved = safePath(filesDir, prevName);
+    if (!resolved || !fs.existsSync(resolved)) {
+      return null;
+    }
+
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile()) return null;
+
+    if (stat.size > MAX_FILE_SIZE) {
+      const content = fs.readFileSync(resolved, 'utf-8').slice(0, MAX_FILE_SIZE);
+      return content + `\n\n[Truncated: file exceeds ${MAX_FILE_SIZE / 1024}KB limit]`;
+    }
+
+    return fs.readFileSync(resolved, 'utf-8');
+  }
+
+  /**
+   * Check if a previous version (.prev) exists for a file.
+   */
+  hasPreviousVersion(userId: string, filename: string): boolean {
+    const filesDir = this.getFilesDir(userId);
+    const prevPath = safePath(filesDir, filename + '.prev');
+    return !!prevPath && fs.existsSync(prevPath);
   }
 
   /**

@@ -3,6 +3,7 @@ import * as dns from 'dns';
 import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
 import type { Database } from '../db/interface';
+import type { ScriptRunner } from '../services/script-runner';
 
 const dnsLookup = promisify(dns.lookup);
 
@@ -473,6 +474,66 @@ function createRemindersTool(userId: string, db: Database): ToolDefinition {
   };
 }
 
+// ─── Tool: run_script (user-scoped factory) ──────────────────────────────────
+
+/** Metadata for the run_script tool. */
+const RUN_SCRIPT_META = {
+  name: 'run_script',
+  description: 'Run a saved script by name. Use this to execute data processing scripts like CSV comparison. Scripts are Python programs that accept JSON inputs and produce JSON output.'
+};
+
+/** Schema for the run_script tool. */
+const RUN_SCRIPT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    script_name: {
+      type: 'string',
+      description: 'Name of the script to run (case-insensitive). Built-in scripts include: csv-diff.'
+    },
+    inputs: {
+      type: 'object',
+      description: 'Input parameters for the script as key-value pairs. Check the script description for required inputs.'
+    }
+  },
+  required: ['script_name', 'inputs']
+};
+
+/** Create a user-scoped run_script tool instance. */
+function createRunScriptTool(userId: string, db: Database, scriptRunner: ScriptRunner): ToolDefinition {
+  return {
+    name: RUN_SCRIPT_META.name,
+    description: RUN_SCRIPT_META.description,
+    input_schema: RUN_SCRIPT_SCHEMA,
+    handler: async (input: { script_name: string; inputs: Record<string, unknown> }) => {
+      // Look up script by name (user's own + shared)
+      const allScripts = await db.getScripts(userId);
+      const script = allScripts.find(
+        s => s.name.toLowerCase() === input.script_name.toLowerCase() && (s.approved || s.ownerId === userId)
+      );
+
+      if (!script) {
+        const available = allScripts
+          .filter(s => s.approved || s.ownerId === userId)
+          .map(s => s.name);
+        return {
+          error: `Script "${input.script_name}" not found.`,
+          available_scripts: available
+        };
+      }
+
+      try {
+        const result = await scriptRunner.execute(script.sourceCode, input.inputs || {});
+        if (!result.success) {
+          return { error: result.error || 'Script execution failed', durationMs: result.durationMs };
+        }
+        return { output: result.output, durationMs: result.durationMs };
+      } catch (err: any) {
+        return { error: `Script execution error: ${err.message}` };
+      }
+    }
+  };
+}
+
 // ─── Tool Registry ───────────────────────────────────────────────────────────
 
 /** Static tools that don't need user context. */
@@ -482,12 +543,13 @@ const STATIC_TOOL_REGISTRY: Record<string, ToolDefinition> = {
 };
 
 /** Names of tools that require user context (created via factory). */
-const USER_SCOPED_TOOLS = new Set(['manage_reminders']);
+const USER_SCOPED_TOOLS = new Set(['manage_reminders', 'run_script']);
 
 /** Context needed to create user-scoped tool instances. */
 export interface ToolContext {
   userId: string;
   db: Database;
+  scriptRunner?: ScriptRunner;
 }
 
 /**
@@ -511,6 +573,8 @@ export function getTools(names: string[], context?: ToolContext): ToolDefinition
     if (USER_SCOPED_TOOLS.has(name) && context) {
       if (name === 'manage_reminders') {
         tools.push(createRemindersTool(context.userId, context.db));
+      } else if (name === 'run_script' && context.scriptRunner) {
+        tools.push(createRunScriptTool(context.userId, context.db, context.scriptRunner));
       }
     }
   }
@@ -534,5 +598,5 @@ export function getToolsMeta(): Array<{ name: string; description: string }> {
     name: t.name,
     description: t.description
   }));
-  return [...staticMeta, MANAGE_REMINDERS_META];
+  return [...staticMeta, MANAGE_REMINDERS_META, RUN_SCRIPT_META];
 }

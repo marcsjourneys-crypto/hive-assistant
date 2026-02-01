@@ -1,4 +1,4 @@
-import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog, Script, Workflow, WorkflowRun, Schedule, UserCredential, ChannelIdentity, Reminder } from './interface';
+import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog, Script, Workflow, WorkflowRun, Schedule, UserCredential, ChannelIdentity, Reminder, FileMetadata, WorkflowTemplate } from './interface';
 
 /**
  * JSON file database implementation - placeholder.
@@ -77,6 +77,16 @@ export class JSONDatabase implements IDatabase {
   async getDueReminders(): Promise<Reminder[]> { throw new Error('Not implemented'); }
   async updateReminder(_id: string, _updates: Partial<Pick<Reminder, 'text' | 'isComplete' | 'dueAt' | 'notifiedAt'>>): Promise<Reminder> { throw new Error('Not implemented'); }
   async deleteReminder(_id: string): Promise<void> { throw new Error('Not implemented'); }
+  async getFileMetadata(_userId: string, _filename: string): Promise<FileMetadata | null> { throw new Error('Not implemented'); }
+  async setFileTracked(_userId: string, _filename: string, _tracked: boolean): Promise<void> { throw new Error('Not implemented'); }
+  async getTrackedFiles(_userId: string): Promise<FileMetadata[]> { throw new Error('Not implemented'); }
+  async upsertFileMetadata(_userId: string, _filename: string, _tracked: boolean): Promise<void> { throw new Error('Not implemented'); }
+  async getTemplate(_templateId: string): Promise<WorkflowTemplate | null> { throw new Error('Not implemented'); }
+  async getTemplates(): Promise<WorkflowTemplate[]> { throw new Error('Not implemented'); }
+  async getPublishedTemplates(): Promise<WorkflowTemplate[]> { throw new Error('Not implemented'); }
+  async createTemplate(_template: Omit<WorkflowTemplate, 'createdAt' | 'updatedAt'>): Promise<WorkflowTemplate> { throw new Error('Not implemented'); }
+  async updateTemplate(_templateId: string, _updates: Partial<WorkflowTemplate>): Promise<WorkflowTemplate> { throw new Error('Not implemented'); }
+  async deleteTemplate(_templateId: string): Promise<void> { throw new Error('Not implemented'); }
   async getChannelIdentity(_id: string): Promise<ChannelIdentity | null> { throw new Error('Not implemented'); }
   async getChannelIdentities(_userId: string): Promise<ChannelIdentity[]> { throw new Error('Not implemented'); }
   async getChannelIdentitiesByChannel(_userId: string, _channel: string): Promise<ChannelIdentity[]> { throw new Error('Not implemented'); }
