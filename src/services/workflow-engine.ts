@@ -187,7 +187,7 @@ export class WorkflowEngine {
         if (typeof val === 'string' && val.includes('${')) {
           val = val.replace(/\$\{steps\.([^}]+)\}/g, (_match, ref) => {
             const resolved = this.resolveRef(ref, stepOutputs);
-            return resolved != null ? String(resolved) : '';
+            return resolved != null ? this.formatInputValue(resolved) : '';
           });
         }
         resolved[key] = val;

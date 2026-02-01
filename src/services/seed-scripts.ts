@@ -95,9 +95,45 @@ def run(inputs):
 
     summary = "No changes detected." if not has_changes else "Changes: " + ", ".join(parts) + "."
 
+    # Build a detailed human-readable report
+    def format_row(row):
+        """Format a row dict as a compact string, skipping empty values."""
+        fields = [f"{k}: {v}" for k, v in row.items() if v]
+        return ", ".join(fields[:8])  # cap at 8 fields to keep lines readable
+
+    detail_parts = [summary]
+
+    if added:
+        detail_parts.append("")
+        detail_parts.append("Added:")
+        for row in added[:20]:
+            detail_parts.append(f"  + {format_row(row)}")
+        if len(added) > 20:
+            detail_parts.append(f"  ... and {len(added) - 20} more")
+
+    if removed:
+        detail_parts.append("")
+        detail_parts.append("Removed:")
+        for row in removed[:20]:
+            detail_parts.append(f"  - {format_row(row)}")
+        if len(removed) > 20:
+            detail_parts.append(f"  ... and {len(removed) - 20} more")
+
+    if changed:
+        detail_parts.append("")
+        detail_parts.append("Changed:")
+        for ch in changed[:20]:
+            diffs = "; ".join([f"{c['column']}: {c['old']} -> {c['new']}" for c in ch["changes"][:5]])
+            detail_parts.append(f"  ~ {ch['key']}: {diffs}")
+        if len(changed) > 20:
+            detail_parts.append(f"  ... and {len(changed) - 20} more")
+
+    detail = "\\n".join(detail_parts)
+
     return {
         "has_changes": has_changes,
         "summary": summary,
+        "detail": detail,
         "added_rows": added[:50],
         "removed_rows": removed[:50],
         "changed_rows": changed[:50],
@@ -146,7 +182,8 @@ export async function seedBuiltinScripts(db: IDatabase): Promise<void> {
       },
       outputSchema: {
         has_changes: 'boolean',
-        summary: 'string',
+        summary: 'string (short stats line)',
+        detail: 'string (full human-readable change report)',
         added_rows: 'list of row objects',
         removed_rows: 'list of row objects',
         changed_rows: 'list of {key, changes}',
@@ -167,9 +204,6 @@ export async function seedBuiltinScripts(db: IDatabase): Promise<void> {
  * Seed the "CSV Change Monitor" workflow template.
  */
 async function seedCsvChangeMonitorTemplate(db: IDatabase): Promise<void> {
-  const existing = await db.getTemplates();
-  if (existing.some(t => t.name === 'CSV Change Monitor')) return;
-
   const steps = [
     {
       id: 'compare',
@@ -190,10 +224,12 @@ async function seedCsvChangeMonitorTemplate(db: IDatabase): Promise<void> {
       name: 'Send change notification',
       config: {
         channel: '{{notify_channel}}',
-        message: 'CSV changes detected in {{filename}}:\n\n${steps.compare.output.summary}'
+        message: 'CSV changes detected in {{filename}}:\n\n${steps.compare.output.detail}'
       }
     }
   ];
+
+  const expectedStepsJson = JSON.stringify(steps);
 
   const parameters = [
     {
@@ -217,16 +253,26 @@ async function seedCsvChangeMonitorTemplate(db: IDatabase): Promise<void> {
     }
   ];
 
-  await db.createTemplate({
-    id: uuidv4(),
-    name: 'CSV Change Monitor',
-    description: 'Compare a CSV file against its previous version and send a notification with the changes. Works with tracked files that keep a .prev backup.',
-    category: 'File Processing',
-    stepsJson: JSON.stringify(steps),
-    parametersJson: JSON.stringify(parameters),
-    createdBy: SYSTEM_USER_ID,
-    isPublished: true
-  });
+  const existing = await db.getTemplates();
+  const csvMonitor = existing.find(t => t.name === 'CSV Change Monitor');
 
-  console.log('  [Seed] CSV Change Monitor template created');
+  if (csvMonitor) {
+    // Update template if steps have changed (e.g., message format)
+    if (csvMonitor.stepsJson !== expectedStepsJson) {
+      await db.updateTemplate(csvMonitor.id, { stepsJson: expectedStepsJson });
+      console.log('  [Seed] CSV Change Monitor template updated');
+    }
+  } else {
+    await db.createTemplate({
+      id: uuidv4(),
+      name: 'CSV Change Monitor',
+      description: 'Compare a CSV file against its previous version and send a notification with the changes. Works with tracked files that keep a .prev backup.',
+      category: 'File Processing',
+      stepsJson: expectedStepsJson,
+      parametersJson: JSON.stringify(parameters),
+      createdBy: SYSTEM_USER_ID,
+      isPublished: true
+    });
+    console.log('  [Seed] CSV Change Monitor template created');
+  }
 }
