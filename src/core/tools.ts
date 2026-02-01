@@ -367,3 +367,14 @@ export function getTools(names: string[]): ToolDefinition[] {
 export function getAvailableToolNames(): string[] {
   return Object.keys(TOOL_REGISTRY);
 }
+
+/**
+ * Get tool metadata (name + description) for all registered tools.
+ * Used by the web dashboard to populate the tools selector UI.
+ */
+export function getToolsMeta(): Array<{ name: string; description: string }> {
+  return Object.values(TOOL_REGISTRY).map(t => ({
+    name: t.name,
+    description: t.description
+  }));
+}

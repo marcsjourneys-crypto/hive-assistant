@@ -26,6 +26,7 @@ import { createWorkflowsRoutes } from './routes/workflows';
 import { createSchedulesRoutes } from './routes/schedules';
 import { createCredentialsRoutes } from './routes/credentials';
 import { createChannelIdentitiesRoutes } from './routes/channel-identities';
+import { getToolsMeta } from '../core/tools';
 
 export interface WebServerConfig {
   db: IDatabase;
@@ -76,6 +77,7 @@ export function createWebServer(config: WebServerConfig): express.Express {
     app.use('/api/credentials', createCredentialsRoutes(config.credentialVault));
   }
   app.use('/api/channel-identities', createChannelIdentitiesRoutes(db));
+  app.get('/api/tools', (_req, res) => { res.json(getToolsMeta()); });
   if (config.gateway) {
     app.use('/api/chat', createChatRoutes(db, config.gateway));
   }

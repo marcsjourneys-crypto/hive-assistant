@@ -6,12 +6,12 @@ const navItems = [
   { to: '/chat', label: 'Chat', icon: '💬' },
   { to: '/settings/soul', label: 'Personality', icon: '🎭' },
   { to: '/settings/profile', label: 'Profile', icon: '👤' },
-  { to: '/settings/skills', label: 'Skills', icon: '⚡' },
   { to: '/settings/channels', label: 'Channels', icon: '📱' },
   { to: '/settings/identities', label: 'Identities', icon: '🔗' },
 ];
 
 const automationItems = [
+  { to: '/settings/skills', label: 'Skills', icon: '⚡' },
   { to: '/automation/scripts', label: 'Scripts', icon: '🐍' },
   { to: '/automation/workflows', label: 'Workflows', icon: '🔗' },
   { to: '/automation/schedules', label: 'Schedules', icon: '⏰' },

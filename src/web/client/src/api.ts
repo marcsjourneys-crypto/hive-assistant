@@ -505,6 +505,16 @@ export const workflows = {
     request<WorkflowRunInfo>(`/workflows/runs/${runId}`),
 };
 
+// Tools
+export interface ToolInfo {
+  name: string;
+  description: string;
+}
+
+export const tools = {
+  list: () => request<ToolInfo[]>('/tools'),
+};
+
 // Schedules
 export interface ScheduleInfo {
   id: string;

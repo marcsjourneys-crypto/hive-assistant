@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { workflows, scripts, skills, credentials, channelIdentities, WorkflowInfo, WorkflowRunResult, ScriptInfo, SkillInfo, CredentialInfo, ChannelIdentityInfo } from '../api';
+import { workflows, scripts, skills, credentials, channelIdentities, tools, WorkflowInfo, WorkflowRunResult, ScriptInfo, SkillInfo, CredentialInfo, ChannelIdentityInfo, ToolInfo } from '../api';
 
 interface InputMapping {
   type: 'static' | 'ref' | 'credential';
@@ -16,6 +16,7 @@ interface StepDef {
   channel?: string;
   label?: string;
   inputs: Record<string, InputMapping>;
+  tools?: string[];
 }
 
 interface WorkflowForm {
@@ -42,6 +43,7 @@ export default function WorkflowsPage() {
   const [skillList, setSkillList] = useState<SkillInfo[]>([]);
   const [credentialList, setCredentialList] = useState<CredentialInfo[]>([]);
   const [identityList, setIdentityList] = useState<ChannelIdentityInfo[]>([]);
+  const [toolList, setToolList] = useState<ToolInfo[]>([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState<string | null>(null);
@@ -57,18 +59,20 @@ export default function WorkflowsPage() {
 
   const loadData = async () => {
     try {
-      const [w, s, sk, creds, ids] = await Promise.all([
+      const [w, s, sk, creds, ids, tls] = await Promise.all([
         workflows.list(),
         scripts.list(),
         skills.list(),
         credentials.list().catch(() => [] as CredentialInfo[]),
-        channelIdentities.list().catch(() => [] as ChannelIdentityInfo[])
+        channelIdentities.list().catch(() => [] as ChannelIdentityInfo[]),
+        tools.list().catch(() => [] as ToolInfo[])
       ]);
       setWorkflowList(w);
       setScriptList(s);
       setSkillList(sk);
       setCredentialList(creds);
       setIdentityList(ids);
+      setToolList(tls);
     } catch (err: any) {
       setError(err.message);
     }
@@ -356,6 +360,34 @@ export default function WorkflowsPage() {
                             <option key={s.id} value={s.name}>{s.name}</option>
                           ))}
                         </select>
+                      </div>
+                    )}
+                    {step.type === 'skill' && toolList.length > 0 && (
+                      <div className="mb-3">
+                        <label className="block text-xs text-gray-500 mb-1">Tools</label>
+                        <p className="text-xs text-gray-400 mb-2">Give the AI access to these tools during this step.</p>
+                        <div className="space-y-1">
+                          {toolList.map(tool => (
+                            <label key={tool.name} className="flex items-start gap-2 text-sm cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={(step.tools || []).includes(tool.name)}
+                                onChange={e => {
+                                  const current = step.tools || [];
+                                  const updated = e.target.checked
+                                    ? [...current, tool.name]
+                                    : current.filter(t => t !== tool.name);
+                                  updateStep(idx, { tools: updated.length > 0 ? updated : undefined });
+                                }}
+                                className="mt-0.5"
+                              />
+                              <span>
+                                <span className="font-mono text-xs">{tool.name}</span>
+                                <span className="text-xs text-gray-400 ml-1">— {tool.description}</span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
                       </div>
                     )}
                     {step.type === 'notify' && (
