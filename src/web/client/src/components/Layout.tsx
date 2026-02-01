@@ -8,6 +8,8 @@ const navItems = [
   { to: '/settings/profile', label: 'Profile', icon: '👤' },
   { to: '/settings/channels', label: 'Channels', icon: '📱' },
   { to: '/settings/identities', label: 'Identities', icon: '🔗' },
+  { to: '/settings/files', label: 'Files', icon: '📁' },
+  { to: '/settings/reminders', label: 'Reminders', icon: '✅' },
 ];
 
 const automationItems = [

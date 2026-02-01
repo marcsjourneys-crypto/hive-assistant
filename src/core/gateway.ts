@@ -11,7 +11,7 @@ import { getConfig } from '../utils/config';
 import { ensureUserWorkspace } from '../utils/user-workspace';
 import { FileAccessService } from '../services/file-access';
 import { WorkflowTriggerService } from '../services/workflow-trigger';
-import { getTools } from './tools';
+import { getTools, ToolContext } from './tools';
 
 /** Configuration for creating a Gateway instance. */
 export interface GatewayConfig {
@@ -282,13 +282,16 @@ export class Gateway {
         systemPrompt: context.systemPrompt
       };
 
-      // Resolve tool names to definitions if provided
-      if (options?.tools?.length) {
-        const resolvedTools = getTools(options.tools);
-        if (resolvedTools.length > 0) {
-          executeOptions.tools = resolvedTools;
-          console.log(`  [gateway] Passing ${resolvedTools.length} tool(s) to executor: ${resolvedTools.map(t => t.name).join(', ')}`);
-        }
+      // Resolve tool names to definitions if provided.
+      // Pass user context so user-scoped tools (e.g. manage_reminders) get bound correctly.
+      // Always include manage_reminders — the AI naturally decides when to use it.
+      const toolContext: ToolContext = { userId, db: this.db };
+      const toolNames = new Set(options?.tools || []);
+      toolNames.add('manage_reminders');
+      const resolvedTools = getTools([...toolNames], toolContext);
+      if (resolvedTools.length > 0) {
+        executeOptions.tools = resolvedTools;
+        console.log(`  [gateway] Passing ${resolvedTools.length} tool(s) to executor: ${resolvedTools.map(t => t.name).join(', ')}`);
       }
 
       const result = await this.executor.execute(

@@ -26,6 +26,9 @@ import { createWorkflowsRoutes } from './routes/workflows';
 import { createSchedulesRoutes } from './routes/schedules';
 import { createCredentialsRoutes } from './routes/credentials';
 import { createChannelIdentitiesRoutes } from './routes/channel-identities';
+import { createRemindersRoutes } from './routes/reminders';
+import { createFilesRoutes } from './routes/files';
+import { FileAccessService } from '../services/file-access';
 import { getToolsMeta } from '../core/tools';
 
 export interface WebServerConfig {
@@ -77,6 +80,8 @@ export function createWebServer(config: WebServerConfig): express.Express {
     app.use('/api/credentials', createCredentialsRoutes(config.credentialVault));
   }
   app.use('/api/channel-identities', createChannelIdentitiesRoutes(db));
+  app.use('/api/reminders', createRemindersRoutes(db));
+  app.use('/api/files', createFilesRoutes(new FileAccessService()));
   app.get('/api/tools', (_req, res) => { res.json(getToolsMeta()); });
   if (config.gateway) {
     app.use('/api/chat', createChatRoutes(db, config.gateway));

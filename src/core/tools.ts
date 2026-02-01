@@ -1,6 +1,8 @@
 import { URL } from 'url';
 import * as dns from 'dns';
 import { promisify } from 'util';
+import { v4 as uuidv4 } from 'uuid';
+import type { Database } from '../db/interface';
 
 const dnsLookup = promisify(dns.lookup);
 
@@ -344,28 +346,154 @@ const fetchUrlTool: ToolDefinition = {
   }
 };
 
+// ─── Tool: manage_reminders (user-scoped factory) ───────────────────────────
+
+/** Metadata for the manage_reminders tool (used for tool selector UI). */
+const MANAGE_REMINDERS_META = {
+  name: 'manage_reminders',
+  description: 'Add, list, complete, or remove reminders for the user. Use this when the user asks to be reminded of something, wants to see their reminders, or marks a reminder as done.'
+};
+
+/** Schema for the manage_reminders tool. */
+const MANAGE_REMINDERS_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['add', 'list', 'complete', 'remove'],
+      description: 'The action to perform: add a new reminder, list existing reminders, complete a reminder, or remove a reminder.'
+    },
+    text: {
+      type: 'string',
+      description: 'The reminder text (required for "add" action).'
+    },
+    reminderId: {
+      type: 'string',
+      description: 'The reminder ID (required for "complete" and "remove" actions).'
+    },
+    includeComplete: {
+      type: 'boolean',
+      description: 'When listing, include completed reminders (default: false).'
+    }
+  },
+  required: ['action']
+};
+
+/** Create a user-scoped manage_reminders tool instance. */
+function createRemindersTool(userId: string, db: Database): ToolDefinition {
+  return {
+    name: MANAGE_REMINDERS_META.name,
+    description: MANAGE_REMINDERS_META.description,
+    input_schema: MANAGE_REMINDERS_SCHEMA,
+    handler: async (input: {
+      action: 'add' | 'list' | 'complete' | 'remove';
+      text?: string;
+      reminderId?: string;
+      includeComplete?: boolean;
+    }) => {
+      switch (input.action) {
+        case 'add': {
+          if (!input.text?.trim()) {
+            return { error: 'Reminder text is required for "add" action.' };
+          }
+          const reminder = await db.createReminder({
+            id: uuidv4(),
+            userId,
+            text: input.text.trim(),
+            isComplete: false
+          });
+          return {
+            success: true,
+            reminder: { id: reminder.id, text: reminder.text, createdAt: reminder.createdAt.toISOString() }
+          };
+        }
+        case 'list': {
+          const reminders = await db.getReminders(userId, input.includeComplete ?? false);
+          return {
+            reminders: reminders.map(r => ({
+              id: r.id,
+              text: r.text,
+              isComplete: r.isComplete,
+              createdAt: r.createdAt.toISOString(),
+              completedAt: r.completedAt?.toISOString() || null
+            })),
+            total: reminders.length
+          };
+        }
+        case 'complete': {
+          if (!input.reminderId) {
+            return { error: 'reminderId is required for "complete" action.' };
+          }
+          const updated = await db.updateReminder(input.reminderId, { isComplete: true });
+          return {
+            success: true,
+            reminder: { id: updated.id, text: updated.text, isComplete: updated.isComplete }
+          };
+        }
+        case 'remove': {
+          if (!input.reminderId) {
+            return { error: 'reminderId is required for "remove" action.' };
+          }
+          await db.deleteReminder(input.reminderId);
+          return { success: true, removed: input.reminderId };
+        }
+        default:
+          return { error: `Unknown action: ${input.action}. Use add, list, complete, or remove.` };
+      }
+    }
+  };
+}
+
 // ─── Tool Registry ───────────────────────────────────────────────────────────
 
-const TOOL_REGISTRY: Record<string, ToolDefinition> = {
+/** Static tools that don't need user context. */
+const STATIC_TOOL_REGISTRY: Record<string, ToolDefinition> = {
   fetch_rss: fetchRssTool,
   fetch_url: fetchUrlTool
 };
 
-/**
- * Get tool definitions by name from the registry.
- * Unknown names are silently skipped.
- */
-export function getTools(names: string[]): ToolDefinition[] {
-  return names
-    .map(name => TOOL_REGISTRY[name])
-    .filter((t): t is ToolDefinition => t != null);
+/** Names of tools that require user context (created via factory). */
+const USER_SCOPED_TOOLS = new Set(['manage_reminders']);
+
+/** Context needed to create user-scoped tool instances. */
+export interface ToolContext {
+  userId: string;
+  db: Database;
 }
 
 /**
- * Get all available tool names.
+ * Get tool definitions by name from the registry.
+ * Static tools are returned directly. User-scoped tools (like manage_reminders)
+ * require a context parameter to bind them to the correct user.
+ * Unknown names are silently skipped.
+ */
+export function getTools(names: string[], context?: ToolContext): ToolDefinition[] {
+  const tools: ToolDefinition[] = [];
+
+  for (const name of names) {
+    // Static tool — return from registry
+    const staticTool = STATIC_TOOL_REGISTRY[name];
+    if (staticTool) {
+      tools.push(staticTool);
+      continue;
+    }
+
+    // User-scoped tool — create via factory if context is available
+    if (USER_SCOPED_TOOLS.has(name) && context) {
+      if (name === 'manage_reminders') {
+        tools.push(createRemindersTool(context.userId, context.db));
+      }
+    }
+  }
+
+  return tools;
+}
+
+/**
+ * Get all available tool names (static + user-scoped).
  */
 export function getAvailableToolNames(): string[] {
-  return Object.keys(TOOL_REGISTRY);
+  return [...Object.keys(STATIC_TOOL_REGISTRY), ...USER_SCOPED_TOOLS];
 }
 
 /**
@@ -373,8 +501,9 @@ export function getAvailableToolNames(): string[] {
  * Used by the web dashboard to populate the tools selector UI.
  */
 export function getToolsMeta(): Array<{ name: string; description: string }> {
-  return Object.values(TOOL_REGISTRY).map(t => ({
+  const staticMeta = Object.values(STATIC_TOOL_REGISTRY).map(t => ({
     name: t.name,
     description: t.description
   }));
+  return [...staticMeta, MANAGE_REMINDERS_META];
 }

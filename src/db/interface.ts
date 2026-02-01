@@ -148,6 +148,15 @@ export interface ChannelIdentity {
   updatedAt: Date;
 }
 
+export interface Reminder {
+  id: string;
+  userId: string;
+  text: string;
+  isComplete: boolean;
+  createdAt: Date;
+  completedAt?: Date;
+}
+
 export interface DebugLog {
   id: string;
   userId: string;
@@ -275,6 +284,12 @@ export interface Database {
   getUserCredentials(userId: string): Promise<UserCredential[]>;
   createUserCredential(credential: Omit<UserCredential, 'createdAt' | 'updatedAt'>): Promise<UserCredential>;
   deleteUserCredential(credentialId: string): Promise<void>;
+
+  // Reminders
+  createReminder(reminder: Omit<Reminder, 'createdAt' | 'completedAt'>): Promise<Reminder>;
+  getReminders(userId: string, includeComplete?: boolean): Promise<Reminder[]>;
+  updateReminder(id: string, updates: Partial<Pick<Reminder, 'text' | 'isComplete'>>): Promise<Reminder>;
+  deleteReminder(id: string): Promise<void>;
 
   // Channel Identities
   getChannelIdentity(id: string): Promise<ChannelIdentity | null>;

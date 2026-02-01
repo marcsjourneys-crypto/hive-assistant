@@ -179,7 +179,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
     }
 
     if (config.channels.telegram.enabled && config.channels.telegram.botToken) {
-      telegram = new TelegramChannel(gateway, config.channels.telegram.botToken);
+      telegram = new TelegramChannel(gateway, config.channels.telegram.botToken, fileAccess);
       telegram.start().catch(err => {
         console.error(chalk.red(`Telegram error: ${err.message}`));
       });

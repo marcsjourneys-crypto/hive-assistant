@@ -1,4 +1,4 @@
-import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog, Script, Workflow, WorkflowRun, Schedule, UserCredential, ChannelIdentity } from './interface';
+import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog, Script, Workflow, WorkflowRun, Schedule, UserCredential, ChannelIdentity, Reminder } from './interface';
 
 /**
  * PostgreSQL database implementation - placeholder.
@@ -72,6 +72,10 @@ export class PostgresDatabase implements IDatabase {
   async getUserCredentials(_userId: string): Promise<UserCredential[]> { throw new Error('Not implemented'); }
   async createUserCredential(_credential: Omit<UserCredential, 'createdAt' | 'updatedAt'>): Promise<UserCredential> { throw new Error('Not implemented'); }
   async deleteUserCredential(_credentialId: string): Promise<void> { throw new Error('Not implemented'); }
+  async createReminder(_reminder: Omit<Reminder, 'createdAt' | 'completedAt'>): Promise<Reminder> { throw new Error('Not implemented'); }
+  async getReminders(_userId: string, _includeComplete?: boolean): Promise<Reminder[]> { throw new Error('Not implemented'); }
+  async updateReminder(_id: string, _updates: Partial<Pick<Reminder, 'text' | 'isComplete'>>): Promise<Reminder> { throw new Error('Not implemented'); }
+  async deleteReminder(_id: string): Promise<void> { throw new Error('Not implemented'); }
   async getChannelIdentity(_id: string): Promise<ChannelIdentity | null> { throw new Error('Not implemented'); }
   async getChannelIdentities(_userId: string): Promise<ChannelIdentity[]> { throw new Error('Not implemented'); }
   async getChannelIdentitiesByChannel(_userId: string, _channel: string): Promise<ChannelIdentity[]> { throw new Error('Not implemented'); }

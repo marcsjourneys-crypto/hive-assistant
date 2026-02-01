@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getUserWorkspacePath } from '../utils/user-workspace';
-import { safePath } from '../utils/path-safety';
+import { safePath, sanitizeFilename } from '../utils/path-safety';
 
 /** Info about a file in a user's files directory. */
 export interface FileInfo {
@@ -10,7 +10,8 @@ export interface FileInfo {
   modified: Date;
 }
 
-const MAX_FILE_SIZE = 100 * 1024; // 100KB
+const MAX_FILE_SIZE = 100 * 1024; // 100KB for text reads
+const MAX_UPLOAD_SIZE = 1024 * 1024; // 1MB for uploads
 
 /** Extensions considered safe to read as text. */
 const TEXT_EXTENSIONS = new Set([
@@ -22,9 +23,16 @@ const TEXT_EXTENSIONS = new Set([
   '.dockerfile', '.gitignore', '.editorconfig'
 ]);
 
+/** Extensions allowed for upload (text + PDF + Excel). */
+const UPLOAD_EXTENSIONS = new Set([
+  ...TEXT_EXTENSIONS,
+  '.pdf', '.xlsx', '.xls'
+]);
+
 /**
  * Sandboxed file access service scoped to each user's files/ directory.
- * Read-only. All paths are validated to prevent traversal attacks.
+ * Supports reading, writing, deleting, and text extraction.
+ * All paths are validated to prevent traversal attacks.
  */
 export class FileAccessService {
   /**
@@ -106,6 +114,125 @@ export class FileAccessService {
   async hasFiles(userId: string): Promise<boolean> {
     const files = await this.listFiles(userId);
     return files.length > 0;
+  }
+
+  /**
+   * Save a file to the user's files directory.
+   * Validates filename, size, and extension.
+   * Returns the sanitized filename used.
+   */
+  async saveFile(userId: string, filename: string, buffer: Buffer): Promise<string> {
+    const sanitized = sanitizeFilename(filename);
+    if (!sanitized) {
+      throw new Error('Invalid filename');
+    }
+
+    const ext = path.extname(sanitized).toLowerCase();
+    if (ext && !UPLOAD_EXTENSIONS.has(ext)) {
+      throw new Error(`File type not allowed: ${ext}`);
+    }
+
+    if (buffer.length > MAX_UPLOAD_SIZE) {
+      throw new Error(`File too large: ${(buffer.length / 1024).toFixed(0)}KB (max ${MAX_UPLOAD_SIZE / 1024}KB)`);
+    }
+
+    const filesDir = this.getFilesDir(userId);
+    fs.mkdirSync(filesDir, { recursive: true });
+
+    const resolved = safePath(filesDir, sanitized);
+    if (!resolved) {
+      throw new Error('Access denied: path outside user directory');
+    }
+
+    fs.writeFileSync(resolved, buffer);
+    return sanitized;
+  }
+
+  /**
+   * Delete a file from the user's files directory.
+   */
+  async deleteFile(userId: string, filename: string): Promise<void> {
+    const filesDir = this.getFilesDir(userId);
+    const resolved = safePath(filesDir, filename);
+    if (!resolved) {
+      throw new Error('Access denied: path outside user directory');
+    }
+
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`File not found: ${filename}`);
+    }
+
+    fs.unlinkSync(resolved);
+  }
+
+  /**
+   * Extract text from PDF or Excel files and save alongside the original.
+   * Returns the name of the extracted file, or null if extraction is not applicable.
+   */
+  async extractText(userId: string, filename: string): Promise<string | null> {
+    const ext = path.extname(filename).toLowerCase();
+
+    if (ext === '.pdf') {
+      return this.extractPdf(userId, filename);
+    } else if (ext === '.xlsx' || ext === '.xls') {
+      return this.extractExcel(userId, filename);
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract text from a PDF file using pdf-parse.
+   */
+  private async extractPdf(userId: string, filename: string): Promise<string> {
+    const filesDir = this.getFilesDir(userId);
+    const resolved = safePath(filesDir, filename);
+    if (!resolved) throw new Error('Access denied');
+
+    const buffer = fs.readFileSync(resolved);
+    // pdf-parse uses `export =` (CommonJS), so dynamic import puts it on .default in ESM interop
+    const pdfParseModule = await import('pdf-parse');
+    const pdfParse = (pdfParseModule as any).default || pdfParseModule;
+    const data = await pdfParse(buffer);
+
+    const extractedName = filename.replace(/\.pdf$/i, '.extracted.txt');
+    const extractedPath = safePath(filesDir, extractedName);
+    if (!extractedPath) throw new Error('Access denied');
+
+    fs.writeFileSync(extractedPath, data.text);
+    return extractedName;
+  }
+
+  /**
+   * Extract data from an Excel file as CSV using xlsx.
+   */
+  private async extractExcel(userId: string, filename: string): Promise<string> {
+    const filesDir = this.getFilesDir(userId);
+    const resolved = safePath(filesDir, filename);
+    if (!resolved) throw new Error('Access denied');
+
+    const buffer = fs.readFileSync(resolved);
+    const XLSX = await import('xlsx');
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+
+    // Convert all sheets to CSV, concatenated
+    const csvParts: string[] = [];
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      const csv = XLSX.utils.sheet_to_csv(sheet);
+      if (workbook.SheetNames.length > 1) {
+        csvParts.push(`--- Sheet: ${sheetName} ---\n${csv}`);
+      } else {
+        csvParts.push(csv);
+      }
+    }
+
+    const extractedName = filename.replace(/\.xlsx?$/i, '.extracted.csv');
+    const extractedPath = safePath(filesDir, extractedName);
+    if (!extractedPath) throw new Error('Access denied');
+
+    fs.writeFileSync(extractedPath, csvParts.join('\n\n'));
+    return extractedName;
   }
 
   /**

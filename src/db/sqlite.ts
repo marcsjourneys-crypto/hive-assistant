@@ -18,7 +18,8 @@ import {
   WorkflowRun,
   Schedule,
   UserCredential,
-  ChannelIdentity
+  ChannelIdentity,
+  Reminder
 } from './interface';
 
 export class SQLiteDatabase implements IDatabase {
@@ -247,6 +248,16 @@ export class SQLiteDatabase implements IDatabase {
         FOREIGN KEY (owner_id) REFERENCES users(id)
       );
 
+      CREATE TABLE IF NOT EXISTS reminders (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        is_complete INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        completed_at TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
       CREATE INDEX IF NOT EXISTS idx_usage_log_user_id ON usage_log(user_id);
@@ -260,6 +271,7 @@ export class SQLiteDatabase implements IDatabase {
       CREATE INDEX IF NOT EXISTS idx_user_credentials_owner_id ON user_credentials(owner_id);
       CREATE INDEX IF NOT EXISTS idx_channel_identities_owner ON channel_identities(owner_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_identities_uniq ON channel_identities(owner_id, channel, channel_user_id);
+      CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id);
     `);
   }
   
@@ -936,6 +948,59 @@ export class SQLiteDatabase implements IDatabase {
     this.db.prepare('DELETE FROM user_credentials WHERE id = ?').run(credentialId);
   }
 
+  // Reminders
+  async createReminder(reminder: Omit<Reminder, 'createdAt' | 'completedAt'>): Promise<Reminder> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO reminders (id, user_id, text, is_complete, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(reminder.id, reminder.userId, reminder.text, reminder.isComplete ? 1 : 0, now);
+
+    const row = this.db.prepare('SELECT * FROM reminders WHERE id = ?').get(reminder.id) as any;
+    return this.mapReminder(row);
+  }
+
+  async getReminders(userId: string, includeComplete: boolean = false): Promise<Reminder[]> {
+    const sql = includeComplete
+      ? 'SELECT * FROM reminders WHERE user_id = ? ORDER BY created_at DESC'
+      : 'SELECT * FROM reminders WHERE user_id = ? AND is_complete = 0 ORDER BY created_at DESC';
+    const rows = this.db.prepare(sql).all(userId) as any[];
+    return rows.map(row => this.mapReminder(row));
+  }
+
+  async updateReminder(id: string, updates: Partial<Pick<Reminder, 'text' | 'isComplete'>>): Promise<Reminder> {
+    const sets: string[] = [];
+    const values: any[] = [];
+
+    if (updates.text !== undefined) { sets.push('text = ?'); values.push(updates.text); }
+    if (updates.isComplete !== undefined) {
+      sets.push('is_complete = ?');
+      values.push(updates.isComplete ? 1 : 0);
+      if (updates.isComplete) {
+        sets.push('completed_at = ?');
+        values.push(new Date().toISOString());
+      } else {
+        sets.push('completed_at = ?');
+        values.push(null);
+      }
+    }
+
+    if (sets.length === 0) {
+      const row = this.db.prepare('SELECT * FROM reminders WHERE id = ?').get(id) as any;
+      return this.mapReminder(row);
+    }
+
+    values.push(id);
+    this.db.prepare(`UPDATE reminders SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+
+    const row = this.db.prepare('SELECT * FROM reminders WHERE id = ?').get(id) as any;
+    return this.mapReminder(row);
+  }
+
+  async deleteReminder(id: string): Promise<void> {
+    this.db.prepare('DELETE FROM reminders WHERE id = ?').run(id);
+  }
+
   // Channel Identities
   async getChannelIdentity(id: string): Promise<ChannelIdentity | null> {
     const row = this.db.prepare('SELECT * FROM channel_identities WHERE id = ?').get(id) as any;
@@ -1168,6 +1233,17 @@ export class SQLiteDatabase implements IDatabase {
       encryptedValue: row.encrypted_value,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
+    };
+  }
+
+  private mapReminder(row: any): Reminder {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      text: row.text,
+      isComplete: row.is_complete === 1,
+      createdAt: new Date(row.created_at),
+      completedAt: row.completed_at ? new Date(row.completed_at) : undefined
     };
   }
 

@@ -603,3 +603,69 @@ export const credentials = {
   delete: (id: string) =>
     request<{ success: boolean }>(`/credentials/${id}`, { method: 'DELETE' }),
 };
+
+// Reminders
+export interface ReminderInfo {
+  id: string;
+  userId: string;
+  text: string;
+  isComplete: boolean;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export const reminders = {
+  list: (includeComplete: boolean = false) =>
+    request<ReminderInfo[]>(`/reminders${includeComplete ? '?includeComplete=true' : ''}`),
+  create: (text: string) =>
+    request<ReminderInfo>('/reminders', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  update: (id: string, updates: { text?: string; isComplete?: boolean }) =>
+    request<ReminderInfo>(`/reminders/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/reminders/${id}`, { method: 'DELETE' }),
+};
+
+// Files
+export interface FileInfoResponse {
+  name: string;
+  size: number;
+  modified: string;
+}
+
+export interface FileUploadResult {
+  name: string;
+  size: number;
+  extracted: string | null;
+}
+
+export interface FileContentResponse {
+  name: string;
+  content: string;
+}
+
+export const files = {
+  list: () => request<FileInfoResponse[]>('/files'),
+  read: (filename: string) => request<FileContentResponse>(`/files/${encodeURIComponent(filename)}`),
+  upload: async (file: File): Promise<FileUploadResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/files`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new ApiError(body.error || 'Upload failed', res.status);
+    }
+    return res.json();
+  },
+  delete: (filename: string) =>
+    request<{ success: boolean }>(`/files/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
+};

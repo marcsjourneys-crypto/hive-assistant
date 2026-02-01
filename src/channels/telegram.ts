@@ -2,6 +2,7 @@ import { Bot, Context } from 'grammy';
 import chalk from 'chalk';
 import { Gateway } from '../core/gateway';
 import { loadSoul } from '../core/soul';
+import { FileAccessService } from '../services/file-access';
 
 const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
 
@@ -16,10 +17,12 @@ export class TelegramChannel {
   private running = false;
   private conversations: Map<string, string> = new Map();
   private assistantName: string;
+  private fileAccess?: FileAccessService;
 
-  constructor(gateway: Gateway, botToken: string) {
+  constructor(gateway: Gateway, botToken: string, fileAccess?: FileAccessService) {
     this.gateway = gateway;
     this.bot = new Bot(botToken);
+    this.fileAccess = fileAccess;
 
     try {
       this.assistantName = loadSoul().name || 'Hive';
@@ -64,6 +67,11 @@ export class TelegramChannel {
     // Handle text messages
     this.bot.on('message:text', async (ctx) => {
       await this.handleTextMessage(ctx);
+    });
+
+    // Handle document/file uploads
+    this.bot.on('message:document', async (ctx) => {
+      await this.handleDocumentMessage(ctx);
     });
 
     // Error handler
@@ -117,6 +125,62 @@ export class TelegramChannel {
       const message = error instanceof Error ? error.message : String(error);
       console.error(chalk.red(`Telegram error for ${userId}: ${message}`));
       await ctx.reply('Sorry, something went wrong. Please try again.').catch(() => {});
+    }
+  }
+
+  /**
+   * Handle an incoming document/file upload.
+   * Downloads the file from Telegram and saves it to the user's files directory.
+   */
+  private async handleDocumentMessage(ctx: Context): Promise<void> {
+    if (!ctx.from || !ctx.message?.document) return;
+
+    if (!this.fileAccess) {
+      await ctx.reply('File uploads are not configured on this server.');
+      return;
+    }
+
+    const userId = `tg:${ctx.from.id}`;
+    const doc = ctx.message.document;
+    const filename = doc.file_name || `file_${Date.now()}`;
+
+    try {
+      await ctx.api.sendChatAction(ctx.chat!.id, 'typing');
+
+      // Download file from Telegram
+      const file = await ctx.api.getFile(doc.file_id);
+      const fileUrl = `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`;
+
+      const response = await fetch(fileUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download file: HTTP ${response.status}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      // Save to user's files directory
+      const savedName = await this.fileAccess.saveFile(userId, filename, buffer);
+
+      // Try text extraction for PDF/Excel
+      let extractedName: string | null = null;
+      try {
+        extractedName = await this.fileAccess.extractText(userId, savedName);
+      } catch {
+        // Non-critical
+      }
+
+      let reply = `Saved "${savedName}" to your files.`;
+      if (extractedName) {
+        reply += ` Text extracted to "${extractedName}".`;
+      }
+
+      await ctx.reply(reply);
+      console.log(chalk.gray(`  [TG ${ctx.from.id}] File saved: ${savedName}`));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(chalk.red(`Telegram file error for ${userId}: ${message}`));
+      await ctx.reply(`Sorry, I couldn't save that file: ${message}`).catch(() => {});
     }
   }
 
