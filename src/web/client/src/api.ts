@@ -543,6 +543,32 @@ export const schedules = {
     request<{ success: boolean }>(`/schedules/${id}`, { method: 'DELETE' }),
 };
 
+// Channel Identities
+export interface ChannelIdentityInfo {
+  id: string;
+  ownerId: string;
+  channel: string;
+  channelUserId: string;
+  label: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const channelIdentities = {
+  list: () => request<ChannelIdentityInfo[]>('/channel-identities'),
+  create: (identity: {
+    channel: string;
+    channelUserId: string;
+    label?: string;
+  }) =>
+    request<ChannelIdentityInfo>('/channel-identities', {
+      method: 'POST',
+      body: JSON.stringify(identity),
+    }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/channel-identities/${id}`, { method: 'DELETE' }),
+};
+
 // Credentials
 export interface CredentialInfo {
   id: string;

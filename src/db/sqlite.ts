@@ -17,7 +17,8 @@ import {
   Workflow,
   WorkflowRun,
   Schedule,
-  UserCredential
+  UserCredential,
+  ChannelIdentity
 } from './interface';
 
 export class SQLiteDatabase implements IDatabase {
@@ -235,6 +236,17 @@ export class SQLiteDatabase implements IDatabase {
         FOREIGN KEY (owner_id) REFERENCES users(id)
       );
 
+      CREATE TABLE IF NOT EXISTS channel_identities (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        channel_user_id TEXT NOT NULL,
+        label TEXT NOT NULL DEFAULT '',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (owner_id) REFERENCES users(id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
       CREATE INDEX IF NOT EXISTS idx_usage_log_user_id ON usage_log(user_id);
@@ -246,6 +258,8 @@ export class SQLiteDatabase implements IDatabase {
       CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_id ON workflow_runs(workflow_id);
       CREATE INDEX IF NOT EXISTS idx_schedules_workflow_id ON schedules(workflow_id);
       CREATE INDEX IF NOT EXISTS idx_user_credentials_owner_id ON user_credentials(owner_id);
+      CREATE INDEX IF NOT EXISTS idx_channel_identities_owner ON channel_identities(owner_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_identities_uniq ON channel_identities(owner_id, channel, channel_user_id);
     `);
   }
   
@@ -917,6 +931,40 @@ export class SQLiteDatabase implements IDatabase {
     this.db.prepare('DELETE FROM user_credentials WHERE id = ?').run(credentialId);
   }
 
+  // Channel Identities
+  async getChannelIdentity(id: string): Promise<ChannelIdentity | null> {
+    const row = this.db.prepare('SELECT * FROM channel_identities WHERE id = ?').get(id) as any;
+    if (!row) return null;
+    return this.mapChannelIdentity(row);
+  }
+
+  async getChannelIdentities(userId: string): Promise<ChannelIdentity[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM channel_identities WHERE owner_id = ? ORDER BY channel ASC, label ASC'
+    ).all(userId) as any[];
+    return rows.map(row => this.mapChannelIdentity(row));
+  }
+
+  async getChannelIdentitiesByChannel(userId: string, channel: string): Promise<ChannelIdentity[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM channel_identities WHERE owner_id = ? AND channel = ? ORDER BY label ASC'
+    ).all(userId, channel) as any[];
+    return rows.map(row => this.mapChannelIdentity(row));
+  }
+
+  async createChannelIdentity(identity: Omit<ChannelIdentity, 'createdAt' | 'updatedAt'>): Promise<ChannelIdentity> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO channel_identities (id, owner_id, channel, channel_user_id, label, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(identity.id, identity.ownerId, identity.channel, identity.channelUserId, identity.label, now, now);
+    return this.getChannelIdentity(identity.id) as Promise<ChannelIdentity>;
+  }
+
+  async deleteChannelIdentity(id: string): Promise<void> {
+    this.db.prepare('DELETE FROM channel_identities WHERE id = ?').run(id);
+  }
+
   // Mappers
   private mapUser(row: any): User {
     return {
@@ -1106,6 +1154,18 @@ export class SQLiteDatabase implements IDatabase {
       name: row.name,
       service: row.service,
       encryptedValue: row.encrypted_value,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
+    };
+  }
+
+  private mapChannelIdentity(row: any): ChannelIdentity {
+    return {
+      id: row.id,
+      ownerId: row.owner_id,
+      channel: row.channel,
+      channelUserId: row.channel_user_id,
+      label: row.label || '',
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };

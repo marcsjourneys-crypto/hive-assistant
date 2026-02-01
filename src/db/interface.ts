@@ -138,6 +138,16 @@ export interface UserCredential {
   updatedAt: Date;
 }
 
+export interface ChannelIdentity {
+  id: string;
+  ownerId: string;
+  channel: string;
+  channelUserId: string;
+  label: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface DebugLog {
   id: string;
   userId: string;
@@ -265,6 +275,13 @@ export interface Database {
   getUserCredentials(userId: string): Promise<UserCredential[]>;
   createUserCredential(credential: Omit<UserCredential, 'createdAt' | 'updatedAt'>): Promise<UserCredential>;
   deleteUserCredential(credentialId: string): Promise<void>;
+
+  // Channel Identities
+  getChannelIdentity(id: string): Promise<ChannelIdentity | null>;
+  getChannelIdentities(userId: string): Promise<ChannelIdentity[]>;
+  getChannelIdentitiesByChannel(userId: string, channel: string): Promise<ChannelIdentity[]>;
+  createChannelIdentity(identity: Omit<ChannelIdentity, 'createdAt' | 'updatedAt'>): Promise<ChannelIdentity>;
+  deleteChannelIdentity(id: string): Promise<void>;
 }
 
 /**

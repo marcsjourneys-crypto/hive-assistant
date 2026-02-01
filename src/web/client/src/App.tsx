@@ -13,6 +13,7 @@ import WorkflowsPage from './pages/Workflows';
 import SchedulesPage from './pages/Schedules';
 import CredentialsPage from './pages/Credentials';
 import Channels from './pages/Channels';
+import ChannelIdentitiesPage from './pages/ChannelIdentities';
 import Users from './pages/admin/Users';
 import System from './pages/admin/System';
 import Logs from './pages/admin/Logs';
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="settings/profile" element={<ProfileEditor />} />
         <Route path="settings/skills" element={<Skills />} />
         <Route path="settings/channels" element={<Channels />} />
+        <Route path="settings/identities" element={<ChannelIdentitiesPage />} />
         <Route path="automation/scripts" element={<ScriptsPage />} />
         <Route path="automation/workflows" element={<WorkflowsPage />} />
         <Route path="automation/schedules" element={<SchedulesPage />} />

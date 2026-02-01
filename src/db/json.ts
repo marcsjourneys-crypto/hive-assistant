@@ -1,4 +1,4 @@
-import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog, Script, Workflow, WorkflowRun, Schedule, UserCredential } from './interface';
+import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog, Script, Workflow, WorkflowRun, Schedule, UserCredential, ChannelIdentity } from './interface';
 
 /**
  * JSON file database implementation - placeholder.
@@ -72,4 +72,9 @@ export class JSONDatabase implements IDatabase {
   async getUserCredentials(_userId: string): Promise<UserCredential[]> { throw new Error('Not implemented'); }
   async createUserCredential(_credential: Omit<UserCredential, 'createdAt' | 'updatedAt'>): Promise<UserCredential> { throw new Error('Not implemented'); }
   async deleteUserCredential(_credentialId: string): Promise<void> { throw new Error('Not implemented'); }
+  async getChannelIdentity(_id: string): Promise<ChannelIdentity | null> { throw new Error('Not implemented'); }
+  async getChannelIdentities(_userId: string): Promise<ChannelIdentity[]> { throw new Error('Not implemented'); }
+  async getChannelIdentitiesByChannel(_userId: string, _channel: string): Promise<ChannelIdentity[]> { throw new Error('Not implemented'); }
+  async createChannelIdentity(_identity: Omit<ChannelIdentity, 'createdAt' | 'updatedAt'>): Promise<ChannelIdentity> { throw new Error('Not implemented'); }
+  async deleteChannelIdentity(_id: string): Promise<void> { throw new Error('Not implemented'); }
 }

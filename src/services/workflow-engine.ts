@@ -278,8 +278,11 @@ export class WorkflowEngine {
 
   /**
    * Execute a notify step by sending a message to a channel.
-   * Extracts the Telegram chat ID from the userId (e.g., "tg:123" → "123").
-   * For web users, the recipient must be provided explicitly via a "recipient" input.
+   *
+   * Three-tier recipient resolution:
+   * 1. Explicit "recipient" input (custom chat ID) — highest priority
+   * 2. "identityId" input — lookup from channel_identities table
+   * 3. Auto-detect — query linked identities, fall back to tg:/wa: prefix extraction
    */
   private async executeNotifyStep(
     step: StepDefinition,
@@ -301,22 +304,39 @@ export class WorkflowEngine {
     } else {
       // Combine all inputs into a message
       const parts = Object.entries(inputs)
-        .filter(([k]) => k !== 'recipient')
+        .filter(([k]) => k !== 'recipient' && k !== 'identityId')
         .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
       message = parts.join('\n');
     }
 
-    // Resolve recipient: explicit input, or extract from userId
-    let recipient = typeof inputs.recipient === 'string' ? inputs.recipient : '';
-    if (!recipient) {
-      if (channel === 'telegram' && userId.startsWith('tg:')) {
-        recipient = userId.slice(3);
-      } else {
-        throw new Error(
-          `Cannot determine ${channel} recipient for user "${userId}". ` +
-          `Add a "recipient" input with the chat ID.`
-        );
+    // Tier 1: Explicit recipient input
+    let recipient = typeof inputs.recipient === 'string' ? inputs.recipient.trim() : '';
+
+    // Tier 2: Identity ID lookup
+    if (!recipient && typeof inputs.identityId === 'string' && inputs.identityId) {
+      const identity = await this.db.getChannelIdentity(inputs.identityId as string);
+      if (identity && identity.ownerId === userId) {
+        recipient = identity.channelUserId;
       }
+    }
+
+    // Tier 3: Auto-detect from linked identities or userId prefix
+    if (!recipient) {
+      const linkedIdentities = await this.db.getChannelIdentitiesByChannel(userId, channel);
+      if (linkedIdentities.length > 0) {
+        recipient = linkedIdentities[0].channelUserId;
+      } else if (channel === 'telegram' && userId.startsWith('tg:')) {
+        recipient = userId.slice(3);
+      } else if (channel === 'whatsapp' && userId.startsWith('wa:')) {
+        recipient = userId.slice(3);
+      }
+    }
+
+    if (!recipient) {
+      throw new Error(
+        `Cannot determine ${channel} recipient for user "${userId}". ` +
+        `Link a ${channel} account in Settings > Identities, or add a "recipient" input.`
+      );
     }
 
     await this.notificationSender.send(channel, recipient, message);

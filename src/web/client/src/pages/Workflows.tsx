@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { workflows, scripts, skills, credentials, WorkflowInfo, WorkflowRunResult, ScriptInfo, SkillInfo, CredentialInfo } from '../api';
+import { workflows, scripts, skills, credentials, channelIdentities, WorkflowInfo, WorkflowRunResult, ScriptInfo, SkillInfo, CredentialInfo, ChannelIdentityInfo } from '../api';
 
 interface InputMapping {
   type: 'static' | 'ref' | 'credential';
@@ -41,6 +41,7 @@ export default function WorkflowsPage() {
   const [scriptList, setScriptList] = useState<ScriptInfo[]>([]);
   const [skillList, setSkillList] = useState<SkillInfo[]>([]);
   const [credentialList, setCredentialList] = useState<CredentialInfo[]>([]);
+  const [identityList, setIdentityList] = useState<ChannelIdentityInfo[]>([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState<string | null>(null);
@@ -56,16 +57,18 @@ export default function WorkflowsPage() {
 
   const loadData = async () => {
     try {
-      const [w, s, sk, creds] = await Promise.all([
+      const [w, s, sk, creds, ids] = await Promise.all([
         workflows.list(),
         scripts.list(),
         skills.list(),
-        credentials.list().catch(() => [] as CredentialInfo[])
+        credentials.list().catch(() => [] as CredentialInfo[]),
+        channelIdentities.list().catch(() => [] as ChannelIdentityInfo[])
       ]);
       setWorkflowList(w);
       setScriptList(s);
       setSkillList(sk);
       setCredentialList(creds);
+      setIdentityList(ids);
     } catch (err: any) {
       setError(err.message);
     }
@@ -356,15 +359,67 @@ export default function WorkflowsPage() {
                       </div>
                     )}
                     {step.type === 'notify' && (
-                      <div className="mb-3">
-                        <label className="block text-xs text-gray-500 mb-1">Channel</label>
-                        <select
-                          value={step.channel || 'telegram'}
-                          onChange={e => updateStep(idx, { channel: e.target.value })}
-                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-hive-500"
-                        >
-                          <option value="telegram">Telegram</option>
-                        </select>
+                      <div className="mb-3 space-y-3">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Channel</label>
+                          <select
+                            value={step.channel || 'telegram'}
+                            onChange={e => updateStep(idx, { channel: e.target.value })}
+                            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-hive-500"
+                          >
+                            <option value="telegram">Telegram</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Recipient</label>
+                          <select
+                            value={
+                              step.inputs.recipient ? 'custom' :
+                              step.inputs.identityId ? (step.inputs.identityId as InputMapping).value || '' :
+                              'auto'
+                            }
+                            onChange={e => {
+                              const val = e.target.value;
+                              const newInputs = { ...step.inputs };
+                              // Remove old recipient/identityId inputs
+                              delete newInputs.recipient;
+                              delete newInputs.identityId;
+                              if (val === 'custom') {
+                                newInputs.recipient = { type: 'static', value: '' };
+                              } else if (val !== 'auto') {
+                                // val is an identity ID
+                                newInputs.identityId = { type: 'static', value: val };
+                              }
+                              updateStep(idx, { inputs: newInputs });
+                            }}
+                            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-hive-500"
+                          >
+                            <option value="auto">Auto-detect (from linked identities)</option>
+                            {identityList
+                              .filter(id => id.channel === (step.channel || 'telegram'))
+                              .map(id => (
+                                <option key={id.id} value={id.id}>
+                                  {id.label || id.channel} ({id.channelUserId})
+                                </option>
+                              ))
+                            }
+                            <option value="custom">Custom chat ID...</option>
+                          </select>
+                          {step.inputs.recipient && (
+                            <input
+                              type="text"
+                              value={(step.inputs.recipient as InputMapping).value || ''}
+                              onChange={e => updateInput(idx, 'recipient', { type: 'static', value: e.target.value })}
+                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm font-mono mt-2 focus:outline-none focus:ring-2 focus:ring-hive-500"
+                              placeholder="Enter chat ID..."
+                            />
+                          )}
+                          {!step.inputs.recipient && !step.inputs.identityId && identityList.filter(id => id.channel === (step.channel || 'telegram')).length === 0 && (
+                            <p className="text-xs text-amber-600 mt-1">
+                              No linked {step.channel || 'telegram'} accounts found. Link one in Settings &gt; Identities.
+                            </p>
+                          )}
+                        </div>
                       </div>
                     )}
 
