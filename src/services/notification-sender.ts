@@ -1,6 +1,33 @@
 import * as https from 'https';
 
 /**
+ * Convert standard markdown to Telegram-safe HTML.
+ * Telegram's legacy Markdown parse mode breaks on common characters.
+ * HTML mode is more forgiving and well-defined.
+ */
+function markdownToTelegramHtml(text: string): string {
+  // 1. Escape HTML entities first (before we add our own tags)
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // 2. Convert markdown links [text](url) → <a href="url">text</a>
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+  // 3. Convert **bold** → <b>bold</b>
+  html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+
+  // 4. Convert remaining *italic* → <i>italic</i>
+  html = html.replace(/\*(.+?)\*/g, '<i>$1</i>');
+
+  // 5. Strip horizontal rules (--- or ***) → blank line
+  html = html.replace(/^[-*]{3,}$/gm, '');
+
+  return html;
+}
+
+/**
  * Sends notifications to messaging channels via their HTTP APIs.
  * Used by WorkflowEngine to deliver workflow results to users.
  */
@@ -33,14 +60,15 @@ export class NotificationSender {
       throw new Error('Telegram bot token not configured');
     }
 
+    const html = markdownToTelegramHtml(text);
     const MAX_LENGTH = 4096;
-    const chunks = this.splitMessage(text, MAX_LENGTH);
+    const chunks = this.splitMessage(html, MAX_LENGTH);
 
     for (const chunk of chunks) {
       await this.telegramApiCall('sendMessage', {
         chat_id: chatId,
         text: chunk,
-        parse_mode: 'Markdown'
+        parse_mode: 'HTML'
       });
     }
   }
