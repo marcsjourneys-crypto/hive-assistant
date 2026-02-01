@@ -18,6 +18,14 @@ export function createChatRoutes(db: IDatabase, gateway: Gateway): Router {
     return `web:${req.user!.userId}`;
   }
 
+  /** Ensure the gateway-side user record exists (conversations FK requires it). */
+  async function ensureUser(userId: string): Promise<void> {
+    const existing = await db.getUser(userId);
+    if (!existing) {
+      await db.createUser({ id: userId, config: {} });
+    }
+  }
+
   /**
    * GET /api/chat/conversations
    * List the current user's conversations.
@@ -43,10 +51,12 @@ export function createChatRoutes(db: IDatabase, gateway: Gateway): Router {
    */
   router.post('/conversations', async (req: Request, res: Response) => {
     try {
+      const userId = gatewayUserId(req);
+      await ensureUser(userId);
       const title = req.body.title || 'New conversation';
       const conversation = await db.createConversation({
         id: uuidv4(),
-        userId: gatewayUserId(req),
+        userId,
         title
       });
       res.json({
