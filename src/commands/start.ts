@@ -24,6 +24,7 @@ import { CredentialVault } from '../services/credential-vault';
 import { NotificationSender } from '../services/notification-sender';
 import { WorkflowTriggerService } from '../services/workflow-trigger';
 import { ReminderScheduler } from '../services/reminder-scheduler';
+import { GoogleCalendarService } from '../services/google-calendar';
 import { seedBuiltinScripts } from '../services/seed-scripts';
 
 interface StartOptions {
@@ -121,6 +122,11 @@ export async function startCommand(options: StartOptions): Promise<void> {
     // 7e. Create AI script generator
     const scriptGenerator = getApiKey() ? new ScriptGenerator() : undefined;
 
+    // 7f. Create Google Calendar service (if configured)
+    const googleCalendar = config.google?.clientId && config.google?.clientSecret
+      ? new GoogleCalendarService(credentialVault, db, config.google.clientId, config.google.clientSecret)
+      : undefined;
+
     // 8. Create gateway
     const gateway = new Gateway({
       db,
@@ -132,7 +138,8 @@ export async function startCommand(options: StartOptions): Promise<void> {
       userSettings,
       skillResolver,
       fileAccess,
-      scriptRunner
+      scriptRunner,
+      googleCalendar
     });
 
     // 8b. Create notification sender (for workflow notify steps)
@@ -203,7 +210,8 @@ export async function startCommand(options: StartOptions): Promise<void> {
       const webHost = config.web.host || '0.0.0.0';
       const app = createWebServer({
         db, port: webPort, host: webHost, gateway, skillResolver,
-        scriptRunner, scriptGenerator, workflowEngine, workflowScheduler, credentialVault
+        scriptRunner, scriptGenerator, workflowEngine, workflowScheduler, credentialVault,
+        googleCalendar
       });
       webServer = app.listen(webPort, webHost, () => {
         console.log(chalk.green(`  Web dashboard: http://${webHost === '0.0.0.0' ? 'localhost' : webHost}:${webPort}`));

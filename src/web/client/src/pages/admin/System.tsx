@@ -26,6 +26,8 @@ export default function System() {
   const [apiKey, setApiKey] = useState('');
   const [tgToken, setTgToken] = useState('');
   const [brevoApiKey, setBrevoApiKey] = useState('');
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [googleClientSecret, setGoogleClientSecret] = useState('');
 
   useEffect(() => {
     loadConfig();
@@ -109,6 +111,24 @@ export default function System() {
       await admin.updateCredentials({ brevoApiKey });
       setBrevoApiKey('');
       setSuccess('Brevo API key updated.');
+      setTimeout(() => setSuccess(''), 3000);
+      await loadConfig();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleUpdateGoogleCreds = async () => {
+    if (!googleClientId && !googleClientSecret) return;
+    setError('');
+    try {
+      const creds: Record<string, string> = {};
+      if (googleClientId) creds.googleClientId = googleClientId;
+      if (googleClientSecret) creds.googleClientSecret = googleClientSecret;
+      await admin.updateCredentials(creds);
+      setGoogleClientId('');
+      setGoogleClientSecret('');
+      setSuccess('Google OAuth credentials updated.');
       setTimeout(() => setSuccess(''), 3000);
       await loadConfig();
     } catch (err: any) {
@@ -400,6 +420,57 @@ export default function System() {
               />
             </div>
             <p className="text-xs text-gray-400">The sender email must be verified in your Brevo account.</p>
+          </div>
+        </div>
+
+        {/* Google Calendar (OAuth) */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="font-semibold mb-3">Google Calendar (OAuth)</h2>
+          <p className="text-xs text-gray-400 mb-3">
+            Configure Google OAuth to let users connect their calendars via Settings &gt; Integrations.
+          </p>
+          <div className="space-y-3">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className={labelClass}>Client ID</label>
+                <span className={`text-xs ${config.google?.hasClientId ? 'text-green-600' : 'text-red-500'}`}>
+                  {config.google?.hasClientId ? 'Configured' : 'Not set'}
+                </span>
+              </div>
+              <input
+                type="password"
+                placeholder="xxxx.apps.googleusercontent.com"
+                value={googleClientId}
+                onChange={e => setGoogleClientId(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className={labelClass}>Client Secret</label>
+                <span className={`text-xs ${config.google?.hasClientSecret ? 'text-green-600' : 'text-red-500'}`}>
+                  {config.google?.hasClientSecret ? 'Configured' : 'Not set'}
+                </span>
+              </div>
+              <input
+                type="password"
+                placeholder="GOCSPX-..."
+                value={googleClientSecret}
+                onChange={e => setGoogleClientSecret(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <button
+              onClick={handleUpdateGoogleCreds}
+              disabled={!googleClientId && !googleClientSecret}
+              className="px-4 py-1.5 text-sm bg-hive-500 text-white rounded-lg hover:bg-hive-600 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Update Google Credentials
+            </button>
+            <p className="text-xs text-gray-400">
+              Create credentials in the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-hive-500 underline">Google Cloud Console</a>.
+              Set the authorized redirect URI to <code className="bg-gray-100 px-1 rounded text-xs">https://yourdomain/api/integrations/google/callback</code>.
+            </p>
           </div>
         </div>
 

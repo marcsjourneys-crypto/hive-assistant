@@ -63,6 +63,10 @@ export interface Config {
     defaultSenderName: string;
     defaultSenderEmail: string;
   };
+  google?: {
+    clientId: string;
+    clientSecret: string;
+  };
 }
 
 const HIVE_DIR = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.hive');

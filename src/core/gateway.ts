@@ -12,6 +12,7 @@ import { ensureUserWorkspace } from '../utils/user-workspace';
 import { FileAccessService } from '../services/file-access';
 import { WorkflowTriggerService } from '../services/workflow-trigger';
 import { ScriptRunner } from '../services/script-runner';
+import { GoogleCalendarService } from '../services/google-calendar';
 import { getTools, ToolContext } from './tools';
 
 /** Configuration for creating a Gateway instance. */
@@ -27,6 +28,7 @@ export interface GatewayConfig {
   fileAccess?: FileAccessService;
   workflowTrigger?: WorkflowTriggerService;
   scriptRunner?: ScriptRunner;
+  googleCalendar?: GoogleCalendarService;
 }
 
 /** Result returned from handleMessage. */
@@ -60,6 +62,7 @@ export class Gateway {
   private fileAccess?: FileAccessService;
   private workflowTrigger?: WorkflowTriggerService;
   private scriptRunner?: ScriptRunner;
+  private googleCalendar?: GoogleCalendarService;
   private skillsCache: SkillMeta[] | null = null;
 
   constructor(config: GatewayConfig) {
@@ -74,6 +77,7 @@ export class Gateway {
     this.fileAccess = config.fileAccess;
     this.workflowTrigger = config.workflowTrigger;
     this.scriptRunner = config.scriptRunner;
+    this.googleCalendar = config.googleCalendar;
   }
 
   /**
@@ -274,6 +278,17 @@ export class Gateway {
     if (cfg.brevo?.apiKey) {
       toolNames.add('send_email');
     }
+    // Include manage_calendar only if user has connected their Google account
+    if (this.googleCalendar) {
+      try {
+        const calConnected = await this.googleCalendar.isConnected(userId);
+        if (calConnected) {
+          toolNames.add('manage_calendar');
+        }
+      } catch {
+        // Non-critical: skip calendar tool if check fails
+      }
+    }
     const activeToolNames = [...toolNames];
 
     // 10. Build context (exclude current message from history; buildContext adds it)
@@ -304,7 +319,7 @@ export class Gateway {
 
       // Resolve tool names to definitions.
       // Pass user context so user-scoped tools (e.g. manage_reminders) get bound correctly.
-      const toolContext: ToolContext = { userId, db: this.db, scriptRunner: this.scriptRunner };
+      const toolContext: ToolContext = { userId, db: this.db, scriptRunner: this.scriptRunner, googleCalendar: this.googleCalendar };
       const resolvedTools = getTools(activeToolNames, toolContext);
       if (resolvedTools.length > 0) {
         executeOptions.tools = resolvedTools;

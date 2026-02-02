@@ -103,7 +103,14 @@ export function buildContext(
       '- To complete a reminder, use manage_reminders with action "complete" and searchText matching the reminder description.',
       '- To remove a reminder, use action "remove" with searchText matching the description.',
       '- You can search reminders by text — you do NOT need the ID. Use searchText instead.',
-      '- Never say you completed or removed a reminder without calling manage_reminders.'
+      '- Never say you completed or removed a reminder without calling manage_reminders.',
+      '',
+      'For calendar operations (when manage_calendar is available):',
+      '- To check today\'s schedule, use manage_calendar with action "list_events" (defaults to today).',
+      '- To create an event, use action "create_event" with summary, startTime, and endTime in ISO 8601 format.',
+      '- To delete an event, first find it with "list_events" or "find_events" to get the eventId, then use "delete_event".',
+      '- To search events, use action "find_events" with a query string.',
+      '- Never claim you created, deleted, or checked calendar events without actually calling manage_calendar.'
     ];
     parts.push(toolPolicyLines.join('\n'));
   }

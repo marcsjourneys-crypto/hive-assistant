@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
 import type { Database } from '../db/interface';
 import type { ScriptRunner } from '../services/script-runner';
+import type { GoogleCalendarService } from '../services/google-calendar';
 import { getConfig } from '../utils/config';
 
 const dnsLookup = promisify(dns.lookup);
@@ -693,6 +694,204 @@ function createSendEmailTool(userId: string, db: Database): ToolDefinition {
   };
 }
 
+// ─── Tool: manage_calendar (user-scoped factory) ─────────────────────────────
+
+/** Metadata for the manage_calendar tool. */
+const MANAGE_CALENDAR_META = {
+  name: 'manage_calendar',
+  description: 'Manage Google Calendar events: list calendars, view/create/delete events, and search by text. You MUST call this tool for any calendar operation — never fake a response.'
+};
+
+/** Schema for the manage_calendar tool. */
+const MANAGE_CALENDAR_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['list_calendars', 'list_events', 'create_event', 'delete_event', 'find_events'],
+      description: 'The action to perform.'
+    },
+    calendarId: {
+      type: 'string',
+      description: 'Calendar ID to operate on. Defaults to "primary" (the user\'s main calendar).'
+    },
+    date: {
+      type: 'string',
+      description: 'Single date for list_events (ISO 8601 date, e.g. "2026-02-01"). Shows all events on that day.'
+    },
+    startDate: {
+      type: 'string',
+      description: 'Range start for list_events (ISO 8601 datetime). Use with endDate for multi-day ranges.'
+    },
+    endDate: {
+      type: 'string',
+      description: 'Range end for list_events (ISO 8601 datetime).'
+    },
+    summary: {
+      type: 'string',
+      description: 'Event title (required for create_event).'
+    },
+    description: {
+      type: 'string',
+      description: 'Event description (optional for create_event).'
+    },
+    location: {
+      type: 'string',
+      description: 'Event location (optional for create_event).'
+    },
+    startTime: {
+      type: 'string',
+      description: 'Event start time as ISO 8601 datetime (required for create_event).'
+    },
+    endTime: {
+      type: 'string',
+      description: 'Event end time as ISO 8601 datetime (required for create_event).'
+    },
+    allDay: {
+      type: 'boolean',
+      description: 'Whether this is an all-day event (optional for create_event, default false).'
+    },
+    eventId: {
+      type: 'string',
+      description: 'Event ID (required for delete_event).'
+    },
+    query: {
+      type: 'string',
+      description: 'Search text (required for find_events).'
+    }
+  },
+  required: ['action']
+};
+
+/** Create a user-scoped manage_calendar tool instance. */
+function createCalendarTool(userId: string, googleCalendar: GoogleCalendarService): ToolDefinition {
+  return {
+    name: MANAGE_CALENDAR_META.name,
+    description: MANAGE_CALENDAR_META.description,
+    input_schema: MANAGE_CALENDAR_SCHEMA,
+    handler: async (input: {
+      action: 'list_calendars' | 'list_events' | 'create_event' | 'delete_event' | 'find_events';
+      calendarId?: string;
+      date?: string;
+      startDate?: string;
+      endDate?: string;
+      summary?: string;
+      description?: string;
+      location?: string;
+      startTime?: string;
+      endTime?: string;
+      allDay?: boolean;
+      eventId?: string;
+      query?: string;
+    }) => {
+      try {
+        switch (input.action) {
+          case 'list_calendars': {
+            const calendars = await googleCalendar.listCalendars(userId);
+            return { calendars, total: calendars.length };
+          }
+
+          case 'list_events': {
+            let timeMin: string | undefined;
+            let timeMax: string | undefined;
+
+            if (input.date) {
+              // Single date: show all events that day
+              const d = new Date(input.date);
+              timeMin = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
+              timeMax = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).toISOString();
+            } else if (input.startDate) {
+              timeMin = input.startDate;
+              timeMax = input.endDate || new Date(new Date(input.startDate).getTime() + 24 * 60 * 60 * 1000).toISOString();
+            }
+
+            const events = await googleCalendar.listEvents(userId, {
+              calendarId: input.calendarId,
+              timeMin,
+              timeMax
+            });
+
+            return {
+              events: events.map(e => ({
+                id: e.id,
+                summary: e.summary,
+                start: e.start,
+                end: e.end,
+                allDay: e.allDay,
+                location: e.location || null,
+                description: e.description || null
+              })),
+              total: events.length
+            };
+          }
+
+          case 'create_event': {
+            if (!input.summary) return { error: 'summary is required for create_event.' };
+            if (!input.startTime) return { error: 'startTime is required for create_event.' };
+            if (!input.endTime) return { error: 'endTime is required for create_event.' };
+
+            const event = await googleCalendar.createEvent(userId, {
+              calendarId: input.calendarId,
+              summary: input.summary,
+              description: input.description,
+              location: input.location,
+              startTime: input.startTime,
+              endTime: input.endTime,
+              allDay: input.allDay
+            });
+
+            return {
+              success: true,
+              event: {
+                id: event.id,
+                summary: event.summary,
+                start: event.start,
+                end: event.end,
+                htmlLink: event.htmlLink || null
+              }
+            };
+          }
+
+          case 'delete_event': {
+            if (!input.eventId) return { error: 'eventId is required for delete_event.' };
+
+            await googleCalendar.deleteEvent(userId, input.eventId, input.calendarId);
+            return { success: true, deleted: input.eventId };
+          }
+
+          case 'find_events': {
+            if (!input.query) return { error: 'query is required for find_events.' };
+
+            const results = await googleCalendar.findEvents(
+              userId,
+              input.query,
+              input.calendarId
+            );
+
+            return {
+              events: results.map(e => ({
+                id: e.id,
+                summary: e.summary,
+                start: e.start,
+                end: e.end,
+                allDay: e.allDay,
+                location: e.location || null,
+                description: e.description || null
+              })),
+              total: results.length
+            };
+          }
+
+          default:
+            return { error: `Unknown action: ${input.action}. Use list_calendars, list_events, create_event, delete_event, or find_events.` };
+        }
+      } catch (err: any) {
+        return { error: `Calendar error: ${err.message}` };
+      }
+    }
+  };
+}
+
 // ─── Tool Registry ───────────────────────────────────────────────────────────
 
 /** Static tools that don't need user context. */
@@ -702,13 +901,14 @@ const STATIC_TOOL_REGISTRY: Record<string, ToolDefinition> = {
 };
 
 /** Names of tools that require user context (created via factory). */
-const USER_SCOPED_TOOLS = new Set(['manage_reminders', 'run_script', 'send_email']);
+const USER_SCOPED_TOOLS = new Set(['manage_reminders', 'run_script', 'send_email', 'manage_calendar']);
 
 /** Context needed to create user-scoped tool instances. */
 export interface ToolContext {
   userId: string;
   db: Database;
   scriptRunner?: ScriptRunner;
+  googleCalendar?: GoogleCalendarService;
 }
 
 /**
@@ -736,6 +936,8 @@ export function getTools(names: string[], context?: ToolContext): ToolDefinition
         tools.push(createRunScriptTool(context.userId, context.db, context.scriptRunner));
       } else if (name === 'send_email') {
         tools.push(createSendEmailTool(context.userId, context.db));
+      } else if (name === 'manage_calendar' && context.googleCalendar) {
+        tools.push(createCalendarTool(context.userId, context.googleCalendar));
       }
     }
   }
@@ -756,7 +958,8 @@ const TOOL_CATEGORIES: Record<string, string> = {
   fetch_url: 'Data',
   run_script: 'Data',
   manage_reminders: 'Utilities',
-  send_email: 'Communication'
+  send_email: 'Communication',
+  manage_calendar: 'Productivity'
 };
 
 /**
@@ -769,7 +972,7 @@ export function getToolsMeta(): Array<{ name: string; description: string; categ
     description: t.description,
     category: TOOL_CATEGORIES[t.name] || 'Other'
   }));
-  const userScopedMeta = [MANAGE_REMINDERS_META, RUN_SCRIPT_META, SEND_EMAIL_META].map(m => ({
+  const userScopedMeta = [MANAGE_REMINDERS_META, RUN_SCRIPT_META, SEND_EMAIL_META, MANAGE_CALENDAR_META].map(m => ({
     ...m,
     category: TOOL_CATEGORIES[m.name] || 'Other'
   }));

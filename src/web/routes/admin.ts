@@ -154,6 +154,10 @@ export function createAdminRoutes(db: IDatabase): Router {
           hasApiKey: !!config.brevo?.apiKey,
           defaultSenderName: config.brevo?.defaultSenderName || '',
           defaultSenderEmail: config.brevo?.defaultSenderEmail || ''
+        },
+        google: {
+          hasClientId: !!config.google?.clientId,
+          hasClientSecret: !!config.google?.clientSecret
         }
       });
     } catch (error: any) {
@@ -242,7 +246,7 @@ export function createAdminRoutes(db: IDatabase): Router {
   router.put('/system/credentials', (req: Request, res: Response) => {
     try {
       const config = getConfig();
-      const { apiKey, telegramBotToken, brevoApiKey } = req.body;
+      const { apiKey, telegramBotToken, brevoApiKey, googleClientId, googleClientSecret } = req.body;
 
       if (apiKey !== undefined && apiKey !== '') {
         config.ai.apiKey = apiKey;
@@ -255,6 +259,16 @@ export function createAdminRoutes(db: IDatabase): Router {
       if (brevoApiKey !== undefined && brevoApiKey !== '') {
         if (!config.brevo) config.brevo = { apiKey: '', defaultSenderName: '', defaultSenderEmail: '' };
         config.brevo.apiKey = brevoApiKey;
+      }
+
+      if (googleClientId !== undefined && googleClientId !== '') {
+        if (!config.google) config.google = { clientId: '', clientSecret: '' };
+        config.google.clientId = googleClientId;
+      }
+
+      if (googleClientSecret !== undefined && googleClientSecret !== '') {
+        if (!config.google) config.google = { clientId: '', clientSecret: '' };
+        config.google.clientSecret = googleClientSecret;
       }
 
       saveConfig(config);

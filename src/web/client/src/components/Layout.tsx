@@ -10,6 +10,7 @@ const navItems = [
   { to: '/settings/identities', label: 'Identities', icon: '🔗' },
   { to: '/settings/files', label: 'Files', icon: '📁' },
   { to: '/settings/reminders', label: 'Reminders', icon: '✅' },
+  { to: '/settings/integrations', label: 'Integrations', icon: '🔌' },
 ];
 
 const automationItems = [
