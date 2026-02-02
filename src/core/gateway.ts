@@ -298,6 +298,11 @@ export class Gateway {
       const toolNames = new Set(options?.tools || []);
       toolNames.add('manage_reminders');
       toolNames.add('run_script');
+      // Include send_email if Brevo is configured
+      const cfg = getConfig();
+      if (cfg.brevo?.apiKey) {
+        toolNames.add('send_email');
+      }
       const resolvedTools = getTools([...toolNames], toolContext);
       if (resolvedTools.length > 0) {
         executeOptions.tools = resolvedTools;

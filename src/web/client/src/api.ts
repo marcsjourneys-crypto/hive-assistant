@@ -509,6 +509,7 @@ export const workflows = {
 export interface ToolInfo {
   name: string;
   description: string;
+  category: string;
 }
 
 export const tools = {

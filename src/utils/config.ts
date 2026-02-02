@@ -58,6 +58,11 @@ export interface Config {
     enabled: boolean;
     retentionDays?: number;
   };
+  brevo?: {
+    apiKey: string;
+    defaultSenderName: string;
+    defaultSenderEmail: string;
+  };
 }
 
 const HIVE_DIR = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.hive');

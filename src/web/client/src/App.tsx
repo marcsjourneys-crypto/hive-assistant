@@ -17,6 +17,7 @@ import ChannelIdentitiesPage from './pages/ChannelIdentities';
 import RemindersPage from './pages/Reminders';
 import FilesPage from './pages/Files';
 import TemplatesPage from './pages/Templates';
+import ToolsPage from './pages/Tools';
 import Users from './pages/admin/Users';
 import System from './pages/admin/System';
 import Logs from './pages/admin/Logs';
@@ -57,6 +58,7 @@ export default function App() {
         <Route path="automation/workflows" element={<WorkflowsPage />} />
         <Route path="automation/schedules" element={<SchedulesPage />} />
         <Route path="automation/credentials" element={<CredentialsPage />} />
+        <Route path="automation/tools" element={<ToolsPage />} />
 
         <Route path="admin/users" element={<AdminRoute><Users /></AdminRoute>} />
         <Route path="admin/system" element={<AdminRoute><System /></AdminRoute>} />

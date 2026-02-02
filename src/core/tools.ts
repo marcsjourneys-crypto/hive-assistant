@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
 import type { Database } from '../db/interface';
 import type { ScriptRunner } from '../services/script-runner';
+import { getConfig } from '../utils/config';
 
 const dnsLookup = promisify(dns.lookup);
 
@@ -534,6 +535,98 @@ function createRunScriptTool(userId: string, db: Database, scriptRunner: ScriptR
   };
 }
 
+// ─── Tool: send_email (user-scoped factory) ─────────────────────────────────
+
+/** Metadata for the send_email tool. */
+const SEND_EMAIL_META = {
+  name: 'send_email',
+  description: 'Send an email on behalf of the user via Brevo. Use this when the user asks you to email someone, send a message, or forward information by email.'
+};
+
+/** Schema for the send_email tool. */
+const SEND_EMAIL_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    to: {
+      type: 'string',
+      description: 'Recipient email address'
+    },
+    subject: {
+      type: 'string',
+      description: 'Email subject line'
+    },
+    body: {
+      type: 'string',
+      description: 'Email body (plain text)'
+    },
+    cc: {
+      type: 'string',
+      description: 'CC email addresses, comma-separated (optional)'
+    }
+  },
+  required: ['to', 'subject', 'body']
+};
+
+/** Create a user-scoped send_email tool instance. */
+function createSendEmailTool(userId: string, db: Database): ToolDefinition {
+  return {
+    name: SEND_EMAIL_META.name,
+    description: SEND_EMAIL_META.description,
+    input_schema: SEND_EMAIL_SCHEMA,
+    handler: async (input: { to: string; subject: string; body: string; cc?: string }) => {
+      const config = getConfig();
+      if (!config.brevo?.apiKey) {
+        return { error: 'Email is not configured. An admin needs to set up Brevo API credentials.' };
+      }
+
+      // Look up the user's email to use as the FROM address
+      const userAuth = await db.getUserAuthByUserId(userId);
+      const senderEmail = userAuth?.email || config.brevo.defaultSenderEmail;
+      const senderName = config.brevo.defaultSenderName || 'Hive Assistant';
+
+      // Build Brevo API payload
+      const payload: Record<string, unknown> = {
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: input.to.trim() }],
+        subject: input.subject,
+        textContent: input.body
+      };
+
+      // Add CC recipients if provided
+      if (input.cc) {
+        payload.cc = input.cc.split(',').map(e => ({ email: e.trim() }));
+      }
+
+      try {
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'accept': 'application/json',
+            'content-type': 'application/json',
+            'api-key': config.brevo.apiKey
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errBody = await response.text();
+          return { error: `Brevo API error (${response.status}): ${errBody}` };
+        }
+
+        const result: any = await response.json();
+        return {
+          sent: true,
+          to: input.to,
+          subject: input.subject,
+          messageId: result.messageId || null
+        };
+      } catch (err: any) {
+        return { error: `Failed to send email: ${err.message}` };
+      }
+    }
+  };
+}
+
 // ─── Tool Registry ───────────────────────────────────────────────────────────
 
 /** Static tools that don't need user context. */
@@ -543,7 +636,7 @@ const STATIC_TOOL_REGISTRY: Record<string, ToolDefinition> = {
 };
 
 /** Names of tools that require user context (created via factory). */
-const USER_SCOPED_TOOLS = new Set(['manage_reminders', 'run_script']);
+const USER_SCOPED_TOOLS = new Set(['manage_reminders', 'run_script', 'send_email']);
 
 /** Context needed to create user-scoped tool instances. */
 export interface ToolContext {
@@ -575,6 +668,8 @@ export function getTools(names: string[], context?: ToolContext): ToolDefinition
         tools.push(createRemindersTool(context.userId, context.db));
       } else if (name === 'run_script' && context.scriptRunner) {
         tools.push(createRunScriptTool(context.userId, context.db, context.scriptRunner));
+      } else if (name === 'send_email') {
+        tools.push(createSendEmailTool(context.userId, context.db));
       }
     }
   }
@@ -589,14 +684,28 @@ export function getAvailableToolNames(): string[] {
   return [...Object.keys(STATIC_TOOL_REGISTRY), ...USER_SCOPED_TOOLS];
 }
 
+/** Category mapping for tools (used by dashboard UI). */
+const TOOL_CATEGORIES: Record<string, string> = {
+  fetch_rss: 'Data',
+  fetch_url: 'Data',
+  run_script: 'Data',
+  manage_reminders: 'Utilities',
+  send_email: 'Communication'
+};
+
 /**
- * Get tool metadata (name + description) for all registered tools.
- * Used by the web dashboard to populate the tools selector UI.
+ * Get tool metadata (name, description, category) for all registered tools.
+ * Used by the web dashboard to populate the tools page.
  */
-export function getToolsMeta(): Array<{ name: string; description: string }> {
+export function getToolsMeta(): Array<{ name: string; description: string; category: string }> {
   const staticMeta = Object.values(STATIC_TOOL_REGISTRY).map(t => ({
     name: t.name,
-    description: t.description
+    description: t.description,
+    category: TOOL_CATEGORIES[t.name] || 'Other'
   }));
-  return [...staticMeta, MANAGE_REMINDERS_META, RUN_SCRIPT_META];
+  const userScopedMeta = [MANAGE_REMINDERS_META, RUN_SCRIPT_META, SEND_EMAIL_META].map(m => ({
+    ...m,
+    category: TOOL_CATEGORIES[m.name] || 'Other'
+  }));
+  return [...staticMeta, ...userScopedMeta];
 }
