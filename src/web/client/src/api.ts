@@ -281,6 +281,7 @@ export interface SystemConfig {
   web: { enabled: boolean; port: number; host: string };
   user: { name: string; preferredName: string; timezone: string };
   debug: { enabled: boolean; retentionDays: number };
+  brevo: { hasApiKey: boolean; defaultSenderName: string; defaultSenderEmail: string };
 }
 
 export const admin = {
@@ -299,7 +300,7 @@ export const admin = {
       method: 'PUT',
       body: JSON.stringify(updates),
     }),
-  updateCredentials: (creds: { apiKey?: string; telegramBotToken?: string }) =>
+  updateCredentials: (creds: { apiKey?: string; telegramBotToken?: string; brevoApiKey?: string }) =>
     request<{ success: boolean }>('/admin/system/credentials', {
       method: 'PUT',
       body: JSON.stringify(creds),

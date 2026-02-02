@@ -19,11 +19,13 @@ export default function System() {
   const [web, setWeb] = useState({ port: 3000, host: 'localhost' });
   const [user, setUser] = useState({ name: '', preferredName: '', timezone: '' });
   const [debug, setDebug] = useState({ enabled: false, retentionDays: 30 });
+  const [brevo, setBrevo] = useState({ defaultSenderName: '', defaultSenderEmail: '' });
   const [ollamaTest, setOllamaTest] = useState<{ testing: boolean; result: { ok: boolean; message: string; durationMs: number } | null }>({ testing: false, result: null });
 
   // Credential fields
   const [apiKey, setApiKey] = useState('');
   const [tgToken, setTgToken] = useState('');
+  const [brevoApiKey, setBrevoApiKey] = useState('');
 
   useEffect(() => {
     loadConfig();
@@ -40,6 +42,7 @@ export default function System() {
       setWeb({ port: data.web?.port || 3000, host: data.web?.host || 'localhost' });
       setUser({ name: data.user?.name || '', preferredName: data.user?.preferredName || '', timezone: data.user?.timezone || '' });
       setDebug({ enabled: data.debug?.enabled || false, retentionDays: data.debug?.retentionDays || 30 });
+      setBrevo({ defaultSenderName: data.brevo?.defaultSenderName || '', defaultSenderEmail: data.brevo?.defaultSenderEmail || '' });
     } catch (err: any) {
       setError(err.message);
     }
@@ -60,6 +63,7 @@ export default function System() {
         web,
         user,
         debug,
+        brevo,
       });
       setSuccess('Configuration saved.');
       setTimeout(() => setSuccess(''), 3000);
@@ -91,6 +95,20 @@ export default function System() {
       await admin.updateCredentials({ telegramBotToken: tgToken });
       setTgToken('');
       setSuccess('Telegram bot token updated.');
+      setTimeout(() => setSuccess(''), 3000);
+      await loadConfig();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleUpdateBrevoKey = async () => {
+    if (!brevoApiKey) return;
+    setError('');
+    try {
+      await admin.updateCredentials({ brevoApiKey });
+      setBrevoApiKey('');
+      setSuccess('Brevo API key updated.');
       setTimeout(() => setSuccess(''), 3000);
       await loadConfig();
     } catch (err: any) {
@@ -329,6 +347,59 @@ export default function System() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Email (Brevo) */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="font-semibold mb-3">Email (Brevo)</h2>
+          <p className="text-xs text-gray-400 mb-3">
+            Configure Brevo to enable the send_email tool in conversations.
+          </p>
+          <div className="space-y-3">
+            <div className="border-b border-gray-100 pb-3">
+              <div className="flex items-center justify-between mb-2">
+                <label className={labelClass}>API Key</label>
+                <span className={`text-xs ${config.brevo?.hasApiKey ? 'text-green-600' : 'text-red-500'}`}>
+                  {config.brevo?.hasApiKey ? 'Configured' : 'Not set'}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder="xkeysib-..."
+                  value={brevoApiKey}
+                  onChange={e => setBrevoApiKey(e.target.value)}
+                  className={inputClass}
+                />
+                <button
+                  onClick={handleUpdateBrevoKey}
+                  disabled={!brevoApiKey}
+                  className="px-4 py-1.5 text-sm bg-hive-500 text-white rounded-lg hover:bg-hive-600 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  Update Key
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>Default Sender Name</label>
+              <input
+                className={inputClass + ' mt-1'}
+                placeholder="Hive Assistant"
+                value={brevo.defaultSenderName}
+                onChange={e => setBrevo({ ...brevo, defaultSenderName: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Default Sender Email</label>
+              <input
+                className={inputClass + ' mt-1'}
+                placeholder="noreply@yourdomain.com"
+                value={brevo.defaultSenderEmail}
+                onChange={e => setBrevo({ ...brevo, defaultSenderEmail: e.target.value })}
+              />
+            </div>
+            <p className="text-xs text-gray-400">The sender email must be verified in your Brevo account.</p>
           </div>
         </div>
 

@@ -149,6 +149,11 @@ export function createAdminRoutes(db: IDatabase): Router {
         debug: {
           enabled: config.debug?.enabled || false,
           retentionDays: config.debug?.retentionDays || 30
+        },
+        brevo: {
+          hasApiKey: !!config.brevo?.apiKey,
+          defaultSenderName: config.brevo?.defaultSenderName || '',
+          defaultSenderEmail: config.brevo?.defaultSenderEmail || ''
         }
       });
     } catch (error: any) {
@@ -214,6 +219,13 @@ export function createAdminRoutes(db: IDatabase): Router {
         if (updates.debug.retentionDays !== undefined) config.debug.retentionDays = updates.debug.retentionDays;
       }
 
+      // Brevo (non-sensitive fields)
+      if (updates.brevo) {
+        if (!config.brevo) config.brevo = { apiKey: '', defaultSenderName: '', defaultSenderEmail: '' };
+        if (updates.brevo.defaultSenderName !== undefined) config.brevo.defaultSenderName = updates.brevo.defaultSenderName;
+        if (updates.brevo.defaultSenderEmail !== undefined) config.brevo.defaultSenderEmail = updates.brevo.defaultSenderEmail;
+      }
+
       saveConfig(config);
       res.json({ success: true });
     } catch (error: any) {
@@ -230,7 +242,7 @@ export function createAdminRoutes(db: IDatabase): Router {
   router.put('/system/credentials', (req: Request, res: Response) => {
     try {
       const config = getConfig();
-      const { apiKey, telegramBotToken } = req.body;
+      const { apiKey, telegramBotToken, brevoApiKey } = req.body;
 
       if (apiKey !== undefined && apiKey !== '') {
         config.ai.apiKey = apiKey;
@@ -238,6 +250,11 @@ export function createAdminRoutes(db: IDatabase): Router {
 
       if (telegramBotToken !== undefined && telegramBotToken !== '') {
         config.channels.telegram.botToken = telegramBotToken;
+      }
+
+      if (brevoApiKey !== undefined && brevoApiKey !== '') {
+        if (!config.brevo) config.brevo = { apiKey: '', defaultSenderName: '', defaultSenderEmail: '' };
+        config.brevo.apiKey = brevoApiKey;
       }
 
       saveConfig(config);
