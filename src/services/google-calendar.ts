@@ -1,20 +1,6 @@
-import { CredentialVault } from './credential-vault';
-import { Database } from '../db/interface';
+import { GoogleAuthManager } from './google-auth';
 
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_CALENDAR_API = 'https://www.googleapis.com/calendar/v3';
-const CREDENTIAL_SERVICE = 'google_calendar';
-const CREDENTIAL_NAME = 'oauth_tokens';
-
-/** Minimum seconds remaining before we proactively refresh the access token. */
-const REFRESH_THRESHOLD_S = 300; // 5 minutes
-
-/** Stored OAuth token data (encrypted in credential vault). */
-interface StoredTokens {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: number; // Unix epoch ms
-}
 
 /** A Google Calendar entry from calendarList. */
 export interface CalendarEntry {
@@ -60,75 +46,34 @@ export interface CreateEventOptions {
  * Google Calendar integration service.
  *
  * Uses the Google Calendar REST API v3 with OAuth 2.0 tokens
- * stored encrypted in the credential vault (per-user).
+ * managed by GoogleAuthManager.
  *
  * No additional npm dependencies — uses fetch() directly.
  */
 export class GoogleCalendarService {
-  constructor(
-    private vault: CredentialVault,
-    private db: Database,
-    private clientId: string,
-    private clientSecret: string
-  ) {}
+  constructor(private authManager: GoogleAuthManager) {}
 
   /**
-   * Check if a user has stored Google Calendar tokens.
+   * Check if a user has connected Google.
    */
   async isConnected(userId: string): Promise<boolean> {
-    const json = await this.vault.resolveByName(userId, CREDENTIAL_NAME);
-    if (!json) return false;
-    try {
-      const tokens: StoredTokens = JSON.parse(json);
-      return !!tokens.refreshToken;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Store OAuth tokens for a user after completing the consent flow.
-   */
-  async storeTokens(
-    userId: string,
-    accessToken: string,
-    refreshToken: string,
-    expiresInSeconds: number
-  ): Promise<void> {
-    const data: StoredTokens = {
-      accessToken,
-      refreshToken,
-      expiresAt: Date.now() + expiresInSeconds * 1000
-    };
-
-    // Remove existing tokens first (if any)
-    await this.removeTokens(userId);
-
-    // Store new tokens
-    await this.vault.store(userId, CREDENTIAL_NAME, CREDENTIAL_SERVICE, JSON.stringify(data));
-  }
-
-  /**
-   * Remove stored tokens for a user (disconnect).
-   */
-  async disconnect(userId: string): Promise<void> {
-    await this.removeTokens(userId);
+    return this.authManager.isConnected(userId);
   }
 
   /**
    * List all calendars the user has access to.
    */
   async listCalendars(userId: string): Promise<CalendarEntry[]> {
-    const token = await this.getValidAccessToken(userId);
+    const token = await this.authManager.getValidAccessToken(userId);
     const url = `${GOOGLE_CALENDAR_API}/users/me/calendarList?fields=items(id,summary,primary,accessRole)`;
     const data = await this.googleGet(url, token);
-    const items = data.items || [];
+    const items = (data.items || []) as Array<Record<string, unknown>>;
 
-    return items.map((item: any) => ({
-      id: item.id,
-      summary: item.summary || '(No name)',
+    return items.map((item: Record<string, unknown>) => ({
+      id: item.id as string,
+      summary: (item.summary as string) || '(No name)',
       primary: !!item.primary,
-      accessRole: item.accessRole || 'reader'
+      accessRole: (item.accessRole as string) || 'reader'
     }));
   }
 
@@ -137,7 +82,7 @@ export class GoogleCalendarService {
    * Defaults to today's events on the primary calendar.
    */
   async listEvents(userId: string, opts: ListEventsOptions = {}): Promise<CalendarEvent[]> {
-    const token = await this.getValidAccessToken(userId);
+    const token = await this.authManager.getValidAccessToken(userId);
     const calendarId = encodeURIComponent(opts.calendarId || 'primary');
 
     // Default to today if no time range specified
@@ -161,14 +106,14 @@ export class GoogleCalendarService {
     const url = `${GOOGLE_CALENDAR_API}/calendars/${calendarId}/events?${params}`;
     const data = await this.googleGet(url, token);
 
-    return (data.items || []).map((item: any) => this.parseEvent(item));
+    return ((data.items || []) as Array<Record<string, unknown>>).map((item: Record<string, unknown>) => this.parseEvent(item));
   }
 
   /**
    * Create a new event on a calendar.
    */
   async createEvent(userId: string, opts: CreateEventOptions): Promise<CalendarEvent> {
-    const token = await this.getValidAccessToken(userId);
+    const token = await this.authManager.getValidAccessToken(userId);
     const calendarId = encodeURIComponent(opts.calendarId || 'primary');
 
     const body: Record<string, unknown> = {
@@ -202,7 +147,7 @@ export class GoogleCalendarService {
       throw new Error(`Google Calendar API error (${response.status}): ${errText}`);
     }
 
-    const item = await response.json() as any;
+    const item = await response.json() as Record<string, unknown>;
     return this.parseEvent(item);
   }
 
@@ -210,7 +155,7 @@ export class GoogleCalendarService {
    * Delete an event from a calendar.
    */
   async deleteEvent(userId: string, eventId: string, calendarId?: string): Promise<void> {
-    const token = await this.getValidAccessToken(userId);
+    const token = await this.authManager.getValidAccessToken(userId);
     const cal = encodeURIComponent(calendarId || 'primary');
     const eid = encodeURIComponent(eventId);
 
@@ -235,7 +180,7 @@ export class GoogleCalendarService {
     calendarId?: string,
     maxResults?: number
   ): Promise<CalendarEvent[]> {
-    const token = await this.getValidAccessToken(userId);
+    const token = await this.authManager.getValidAccessToken(userId);
     const cal = encodeURIComponent(calendarId || 'primary');
 
     // Search within a reasonable window (past 30 days to 1 year out)
@@ -255,82 +200,15 @@ export class GoogleCalendarService {
     const url = `${GOOGLE_CALENDAR_API}/calendars/${cal}/events?${params}`;
     const data = await this.googleGet(url, token);
 
-    return (data.items || []).map((item: any) => this.parseEvent(item));
+    return ((data.items || []) as Array<Record<string, unknown>>).map((item: Record<string, unknown>) => this.parseEvent(item));
   }
 
   // ─── Private Helpers ────────────────────────────────────────────────────────
 
   /**
-   * Get a valid access token, refreshing if expired or about to expire.
-   */
-  private async getValidAccessToken(userId: string): Promise<string> {
-    const json = await this.vault.resolveByName(userId, CREDENTIAL_NAME);
-    if (!json) {
-      throw new Error('Google Calendar not connected. Please connect via Settings > Integrations.');
-    }
-
-    let tokens: StoredTokens;
-    try {
-      tokens = JSON.parse(json);
-    } catch {
-      throw new Error('Stored Google tokens are corrupted. Please reconnect via Settings > Integrations.');
-    }
-
-    if (!tokens.refreshToken) {
-      throw new Error('No refresh token stored. Please reconnect via Settings > Integrations.');
-    }
-
-    // Check if the access token is still valid (with 5 min buffer)
-    if (tokens.accessToken && tokens.expiresAt > Date.now() + REFRESH_THRESHOLD_S * 1000) {
-      return tokens.accessToken;
-    }
-
-    // Refresh the access token
-    const response = await fetch(GOOGLE_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        refresh_token: tokens.refreshToken,
-        grant_type: 'refresh_token'
-      })
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Token refresh failed (${response.status}): ${errText}`);
-    }
-
-    const refreshData = await response.json() as any;
-    const newTokens: StoredTokens = {
-      accessToken: refreshData.access_token,
-      refreshToken: tokens.refreshToken, // Google doesn't always return a new refresh token
-      expiresAt: Date.now() + (refreshData.expires_in || 3600) * 1000
-    };
-
-    // Update stored tokens
-    await this.removeTokens(userId);
-    await this.vault.store(userId, CREDENTIAL_NAME, CREDENTIAL_SERVICE, JSON.stringify(newTokens));
-
-    return newTokens.accessToken;
-  }
-
-  /**
-   * Remove existing tokens from the vault.
-   */
-  private async removeTokens(userId: string): Promise<void> {
-    const creds = await this.db.getUserCredentials(userId);
-    const existing = creds.find(c => c.name === CREDENTIAL_NAME && c.service === CREDENTIAL_SERVICE);
-    if (existing) {
-      await this.db.deleteUserCredential(existing.id);
-    }
-  }
-
-  /**
    * Perform a GET request to the Google API.
    */
-  private async googleGet(url: string, accessToken: string): Promise<any> {
+  private async googleGet(url: string, accessToken: string): Promise<Record<string, unknown>> {
     const response = await fetch(url, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
@@ -340,24 +218,26 @@ export class GoogleCalendarService {
       throw new Error(`Google Calendar API error (${response.status}): ${errText}`);
     }
 
-    return response.json();
+    return response.json() as Promise<Record<string, unknown>>;
   }
 
   /**
    * Parse a Google Calendar event response into our CalendarEvent format.
    */
-  private parseEvent(item: any): CalendarEvent {
-    const isAllDay = !!item.start?.date;
+  private parseEvent(item: Record<string, unknown>): CalendarEvent {
+    const start = item.start as Record<string, string> | undefined;
+    const end = item.end as Record<string, string> | undefined;
+    const isAllDay = !!start?.date;
     return {
-      id: item.id,
-      summary: item.summary || '(No title)',
-      description: item.description || undefined,
-      location: item.location || undefined,
-      start: item.start?.dateTime || item.start?.date || '',
-      end: item.end?.dateTime || item.end?.date || '',
+      id: item.id as string,
+      summary: (item.summary as string) || '(No title)',
+      description: (item.description as string) || undefined,
+      location: (item.location as string) || undefined,
+      start: start?.dateTime || start?.date || '',
+      end: end?.dateTime || end?.date || '',
       allDay: isAllDay,
-      htmlLink: item.htmlLink || undefined,
-      status: item.status || 'confirmed'
+      htmlLink: (item.htmlLink as string) || undefined,
+      status: (item.status as string) || 'confirmed'
     };
   }
 }

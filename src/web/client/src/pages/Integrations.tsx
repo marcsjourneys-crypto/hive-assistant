@@ -3,6 +3,7 @@ import { integrations } from '../api';
 
 export default function IntegrationsPage() {
   const [googleConnected, setGoogleConnected] = useState(false);
+  const [gmailAuthorized, setGmailAuthorized] = useState(false);
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -16,8 +17,16 @@ export default function IntegrationsPage() {
     try {
       const status = await integrations.googleStatus();
       setGoogleConnected(status.connected);
+      if (status.connected) {
+        try {
+          const gmailStatus = await integrations.gmailStatus();
+          setGmailAuthorized(gmailStatus.gmailAuthorized);
+        } catch {
+          setGmailAuthorized(false);
+        }
+      }
     } catch {
-      // Google Calendar may not be configured — show as disconnected
+      // Google may not be configured — show as disconnected
     } finally {
       setLoading(false);
     }
@@ -26,15 +35,16 @@ export default function IntegrationsPage() {
   function checkUrlParams() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('success') === 'google_connected') {
-      setMessage({ type: 'success', text: 'Google Calendar connected successfully!' });
+      setMessage({ type: 'success', text: 'Google connected successfully!' });
       setGoogleConnected(true);
+      setGmailAuthorized(true);
       // Clean URL
       window.history.replaceState({}, '', window.location.pathname);
     }
     const error = params.get('error');
     if (error) {
       const errorMessages: Record<string, string> = {
-        google_denied: 'Google Calendar access was denied.',
+        google_denied: 'Google access was denied.',
         missing_params: 'OAuth callback missing required parameters.',
         invalid_state: 'Invalid OAuth state. Please try again.',
         expired_state: 'OAuth session expired. Please try again.',
@@ -53,7 +63,8 @@ export default function IntegrationsPage() {
     try {
       await integrations.googleDisconnect();
       setGoogleConnected(false);
-      setMessage({ type: 'success', text: 'Google Calendar disconnected.' });
+      setGmailAuthorized(false);
+      setMessage({ type: 'success', text: 'Google disconnected.' });
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Failed to disconnect' });
     } finally {
@@ -94,12 +105,12 @@ export default function IntegrationsPage() {
       )}
 
       <div className="space-y-4">
-        {/* Google Calendar */}
+        {/* Google (Calendar + Gmail) */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 mb-1">
-                <h3 className="text-lg font-semibold">Google Calendar</h3>
+                <h3 className="text-lg font-semibold">Google</h3>
                 <span className={`text-xs px-2 py-0.5 rounded font-medium ${
                   googleConnected
                     ? 'bg-green-100 text-green-700'
@@ -109,7 +120,7 @@ export default function IntegrationsPage() {
                 </span>
               </div>
               <p className="text-sm text-gray-500">
-                View, create, and manage calendar events through your assistant.
+                Access your Google Calendar and Gmail through your assistant.
                 {!googleConnected && ' Connect your Google account to get started.'}
               </p>
             </div>
@@ -134,10 +145,44 @@ export default function IntegrationsPage() {
           </div>
 
           {googleConnected && (
-            <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+              {/* Service sub-status */}
+              <div className="flex flex-wrap gap-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                  <span className="text-gray-600">Calendar</span>
+                  <span className="text-xs text-green-600 font-medium">Connected</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  {gmailAuthorized ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-green-500" />
+                      <span className="text-gray-600">Gmail</span>
+                      <span className="text-xs text-green-600 font-medium">Connected</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-amber-500" />
+                      <span className="text-gray-600">Gmail</span>
+                      <span className="text-xs text-amber-600 font-medium">Requires re-authorization</span>
+                      <a
+                        href="/api/integrations/google/connect"
+                        className="text-xs text-hive-600 hover:text-hive-700 underline ml-1"
+                      >
+                        Re-authorize
+                      </a>
+                    </>
+                  )}
+                </div>
+              </div>
+
               <p className="text-xs text-gray-400">
-                Your assistant can now use the <code className="bg-gray-100 px-1 rounded">manage_calendar</code> tool
-                to list events, create meetings, and search your calendar.
+                Your assistant can use the{' '}
+                <code className="bg-gray-100 px-1 rounded">manage_calendar</code>
+                {gmailAuthorized && (
+                  <> and <code className="bg-gray-100 px-1 rounded">manage_email</code></>
+                )}
+                {' '}tool{gmailAuthorized ? 's' : ''} to interact with your Google services.
               </p>
             </div>
           )}

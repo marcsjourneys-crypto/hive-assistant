@@ -13,6 +13,7 @@ import { FileAccessService } from '../services/file-access';
 import { WorkflowTriggerService } from '../services/workflow-trigger';
 import { ScriptRunner } from '../services/script-runner';
 import { GoogleCalendarService } from '../services/google-calendar';
+import { GmailService } from '../services/gmail';
 import { getTools, ToolContext } from './tools';
 
 /** Configuration for creating a Gateway instance. */
@@ -29,6 +30,7 @@ export interface GatewayConfig {
   workflowTrigger?: WorkflowTriggerService;
   scriptRunner?: ScriptRunner;
   googleCalendar?: GoogleCalendarService;
+  gmail?: GmailService;
 }
 
 /** Result returned from handleMessage. */
@@ -63,6 +65,7 @@ export class Gateway {
   private workflowTrigger?: WorkflowTriggerService;
   private scriptRunner?: ScriptRunner;
   private googleCalendar?: GoogleCalendarService;
+  private gmail?: GmailService;
   private skillsCache: SkillMeta[] | null = null;
 
   constructor(config: GatewayConfig) {
@@ -78,6 +81,7 @@ export class Gateway {
     this.workflowTrigger = config.workflowTrigger;
     this.scriptRunner = config.scriptRunner;
     this.googleCalendar = config.googleCalendar;
+    this.gmail = config.gmail;
   }
 
   /**
@@ -273,21 +277,24 @@ export class Gateway {
     const toolNames = new Set(options?.tools || []);
     toolNames.add('manage_reminders');
     toolNames.add('run_script');
-    // Include send_email if Brevo is configured
+    // Include Google services if user has connected their Google account
     const cfg = getConfig();
-    if (cfg.brevo?.apiKey) {
-      toolNames.add('send_email');
-    }
-    // Include manage_calendar only if user has connected their Google account
+    let googleConnected = false;
     if (this.googleCalendar) {
       try {
-        const calConnected = await this.googleCalendar.isConnected(userId);
-        if (calConnected) {
+        googleConnected = await this.googleCalendar.isConnected(userId);
+        if (googleConnected) {
           toolNames.add('manage_calendar');
         }
       } catch {
         // Non-critical: skip calendar tool if check fails
       }
+    }
+    // Include manage_email (Gmail) if connected, otherwise fall back to send_email (Brevo)
+    if (this.gmail && googleConnected) {
+      toolNames.add('manage_email');
+    } else if (cfg.brevo?.apiKey) {
+      toolNames.add('send_email');
     }
     const activeToolNames = [...toolNames];
 
@@ -319,7 +326,7 @@ export class Gateway {
 
       // Resolve tool names to definitions.
       // Pass user context so user-scoped tools (e.g. manage_reminders) get bound correctly.
-      const toolContext: ToolContext = { userId, db: this.db, scriptRunner: this.scriptRunner, googleCalendar: this.googleCalendar };
+      const toolContext: ToolContext = { userId, db: this.db, scriptRunner: this.scriptRunner, googleCalendar: this.googleCalendar, gmail: this.gmail };
       const resolvedTools = getTools(activeToolNames, toolContext);
       if (resolvedTools.length > 0) {
         executeOptions.tools = resolvedTools;

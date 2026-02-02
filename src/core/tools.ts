@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Database } from '../db/interface';
 import type { ScriptRunner } from '../services/script-runner';
 import type { GoogleCalendarService } from '../services/google-calendar';
+import type { GmailService } from '../services/gmail';
 import { getConfig } from '../utils/config';
 
 const dnsLookup = promisify(dns.lookup);
@@ -892,6 +893,148 @@ function createCalendarTool(userId: string, googleCalendar: GoogleCalendarServic
   };
 }
 
+// ─── Tool: manage_email (user-scoped factory) ────────────────────────────────
+
+/** Metadata for the manage_email tool. */
+const MANAGE_EMAIL_META = {
+  name: 'manage_email',
+  description: 'Read, send, reply to, and search emails in the user\'s Gmail inbox. You MUST call this tool for any email operation — never fake a response.'
+};
+
+/** Schema for the manage_email tool. */
+const MANAGE_EMAIL_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['list_emails', 'read_email', 'send_email', 'reply_email', 'search_emails', 'list_labels'],
+      description: 'The action to perform.'
+    },
+    emailId: {
+      type: 'string',
+      description: 'Email ID (required for read_email and reply_email).'
+    },
+    to: {
+      type: 'string',
+      description: 'Recipient email address (required for send_email).'
+    },
+    subject: {
+      type: 'string',
+      description: 'Email subject line (required for send_email).'
+    },
+    body: {
+      type: 'string',
+      description: 'Email body text (required for send_email and reply_email).'
+    },
+    cc: {
+      type: 'string',
+      description: 'CC email addresses, comma-separated (optional for send_email).'
+    },
+    bcc: {
+      type: 'string',
+      description: 'BCC email addresses, comma-separated (optional for send_email).'
+    },
+    query: {
+      type: 'string',
+      description: 'Gmail search query (required for search_emails). Uses Gmail search syntax: from:, subject:, is:unread, after:, before:, has:attachment, etc.'
+    },
+    label: {
+      type: 'string',
+      description: 'Label/folder to list emails from (optional for list_emails, defaults to INBOX). Use label ID from list_labels.'
+    },
+    maxResults: {
+      type: 'number',
+      description: 'Maximum number of results to return (optional, default 10, max 20).'
+    }
+  },
+  required: ['action']
+};
+
+/** Create a user-scoped manage_email tool instance. */
+function createEmailTool(userId: string, gmail: GmailService): ToolDefinition {
+  return {
+    name: MANAGE_EMAIL_META.name,
+    description: MANAGE_EMAIL_META.description,
+    input_schema: MANAGE_EMAIL_SCHEMA,
+    handler: async (input: {
+      action: 'list_emails' | 'read_email' | 'send_email' | 'reply_email' | 'search_emails' | 'list_labels';
+      emailId?: string;
+      to?: string;
+      subject?: string;
+      body?: string;
+      cc?: string;
+      bcc?: string;
+      query?: string;
+      label?: string;
+      maxResults?: number;
+    }) => {
+      try {
+        switch (input.action) {
+          case 'list_emails': {
+            const labelIds = input.label ? [input.label] : undefined;
+            const emails = await gmail.listMessages(userId, {
+              labelIds,
+              maxResults: input.maxResults
+            });
+            return { emails, total: emails.length };
+          }
+
+          case 'read_email': {
+            if (!input.emailId) return { error: 'emailId is required for read_email.' };
+            const email = await gmail.getMessage(userId, input.emailId);
+            // Cap body at 10KB to avoid blowing up context
+            if (email.body.length > 10000) {
+              email.body = email.body.substring(0, 10000) + '\n\n[Truncated — email body exceeded 10KB]';
+            }
+            return { email };
+          }
+
+          case 'send_email': {
+            if (!input.to) return { error: 'to is required for send_email.' };
+            if (!input.subject) return { error: 'subject is required for send_email.' };
+            if (!input.body) return { error: 'body is required for send_email.' };
+
+            const result = await gmail.sendMessage(userId, {
+              to: input.to,
+              subject: input.subject,
+              body: input.body,
+              cc: input.cc,
+              bcc: input.bcc
+            });
+            return { success: true, messageId: result.id, to: input.to, subject: input.subject };
+          }
+
+          case 'reply_email': {
+            if (!input.emailId) return { error: 'emailId is required for reply_email.' };
+            if (!input.body) return { error: 'body is required for reply_email.' };
+
+            const result = await gmail.replyToMessage(userId, input.emailId, input.body);
+            return { success: true, messageId: result.id, replyTo: input.emailId };
+          }
+
+          case 'search_emails': {
+            if (!input.query) return { error: 'query is required for search_emails.' };
+
+            const results = await gmail.searchMessages(userId, input.query, input.maxResults);
+            return { emails: results, total: results.length, query: input.query };
+          }
+
+          case 'list_labels': {
+            const labels = await gmail.listLabels(userId);
+            return { labels, total: labels.length };
+          }
+
+          default:
+            return { error: `Unknown action: ${input.action}. Use list_emails, read_email, send_email, reply_email, search_emails, or list_labels.` };
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { error: `Email error: ${message}` };
+      }
+    }
+  };
+}
+
 // ─── Tool Registry ───────────────────────────────────────────────────────────
 
 /** Static tools that don't need user context. */
@@ -901,7 +1044,7 @@ const STATIC_TOOL_REGISTRY: Record<string, ToolDefinition> = {
 };
 
 /** Names of tools that require user context (created via factory). */
-const USER_SCOPED_TOOLS = new Set(['manage_reminders', 'run_script', 'send_email', 'manage_calendar']);
+const USER_SCOPED_TOOLS = new Set(['manage_reminders', 'run_script', 'send_email', 'manage_calendar', 'manage_email']);
 
 /** Context needed to create user-scoped tool instances. */
 export interface ToolContext {
@@ -909,6 +1052,7 @@ export interface ToolContext {
   db: Database;
   scriptRunner?: ScriptRunner;
   googleCalendar?: GoogleCalendarService;
+  gmail?: GmailService;
 }
 
 /**
@@ -938,6 +1082,8 @@ export function getTools(names: string[], context?: ToolContext): ToolDefinition
         tools.push(createSendEmailTool(context.userId, context.db));
       } else if (name === 'manage_calendar' && context.googleCalendar) {
         tools.push(createCalendarTool(context.userId, context.googleCalendar));
+      } else if (name === 'manage_email' && context.gmail) {
+        tools.push(createEmailTool(context.userId, context.gmail));
       }
     }
   }
@@ -959,7 +1105,8 @@ const TOOL_CATEGORIES: Record<string, string> = {
   run_script: 'Data',
   manage_reminders: 'Utilities',
   send_email: 'Communication',
-  manage_calendar: 'Productivity'
+  manage_calendar: 'Productivity',
+  manage_email: 'Communication'
 };
 
 /**
@@ -972,7 +1119,7 @@ export function getToolsMeta(): Array<{ name: string; description: string; categ
     description: t.description,
     category: TOOL_CATEGORIES[t.name] || 'Other'
   }));
-  const userScopedMeta = [MANAGE_REMINDERS_META, RUN_SCRIPT_META, SEND_EMAIL_META, MANAGE_CALENDAR_META].map(m => ({
+  const userScopedMeta = [MANAGE_REMINDERS_META, RUN_SCRIPT_META, SEND_EMAIL_META, MANAGE_CALENDAR_META, MANAGE_EMAIL_META].map(m => ({
     ...m,
     category: TOOL_CATEGORIES[m.name] || 'Other'
   }));

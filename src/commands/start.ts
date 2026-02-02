@@ -24,7 +24,9 @@ import { CredentialVault } from '../services/credential-vault';
 import { NotificationSender } from '../services/notification-sender';
 import { WorkflowTriggerService } from '../services/workflow-trigger';
 import { ReminderScheduler } from '../services/reminder-scheduler';
+import { GoogleAuthManager } from '../services/google-auth';
 import { GoogleCalendarService } from '../services/google-calendar';
+import { GmailService } from '../services/gmail';
 import { seedBuiltinScripts } from '../services/seed-scripts';
 
 interface StartOptions {
@@ -122,9 +124,17 @@ export async function startCommand(options: StartOptions): Promise<void> {
     // 7e. Create AI script generator
     const scriptGenerator = getApiKey() ? new ScriptGenerator() : undefined;
 
-    // 7f. Create Google Calendar service (if configured)
-    const googleCalendar = config.google?.clientId && config.google?.clientSecret
-      ? new GoogleCalendarService(credentialVault, db, config.google.clientId, config.google.clientSecret)
+    // 7f. Create Google auth manager and services (if configured)
+    const googleAuth = config.google?.clientId && config.google?.clientSecret
+      ? new GoogleAuthManager(credentialVault, db, config.google.clientId, config.google.clientSecret)
+      : undefined;
+
+    const googleCalendar = googleAuth
+      ? new GoogleCalendarService(googleAuth)
+      : undefined;
+
+    const gmail = googleAuth
+      ? new GmailService(googleAuth)
       : undefined;
 
     // 8. Create gateway
@@ -139,7 +149,8 @@ export async function startCommand(options: StartOptions): Promise<void> {
       skillResolver,
       fileAccess,
       scriptRunner,
-      googleCalendar
+      googleCalendar,
+      gmail
     });
 
     // 8b. Create notification sender (for workflow notify steps)
@@ -211,7 +222,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
       const app = createWebServer({
         db, port: webPort, host: webHost, gateway, skillResolver,
         scriptRunner, scriptGenerator, workflowEngine, workflowScheduler, credentialVault,
-        googleCalendar
+        googleAuth, gmail
       });
       webServer = app.listen(webPort, webHost, () => {
         console.log(chalk.green(`  Web dashboard: http://${webHost === '0.0.0.0' ? 'localhost' : webHost}:${webPort}`));

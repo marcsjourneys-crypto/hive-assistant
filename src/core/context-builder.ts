@@ -110,7 +110,17 @@ export function buildContext(
       '- To create an event, use action "create_event" with summary, startTime, and endTime in ISO 8601 format.',
       '- To delete an event, first find it with "list_events" or "find_events" to get the eventId, then use "delete_event".',
       '- To search events, use action "find_events" with a query string.',
-      '- Never claim you created, deleted, or checked calendar events without actually calling manage_calendar.'
+      '- Never claim you created, deleted, or checked calendar events without actually calling manage_calendar.',
+      '',
+      'For email operations (when manage_email is available):',
+      '- To check recent emails, use manage_email with action "list_emails" (defaults to INBOX).',
+      '- To read a specific email, use action "read_email" with the emailId from list or search results.',
+      '- To send a new email, use action "send_email" with to, subject, and body.',
+      '- To reply to an email, use action "reply_email" with emailId and body. Threading is handled automatically.',
+      '- To search emails, use action "search_emails" with a Gmail-syntax query (e.g., "from:boss@company.com is:unread", "subject:invoice after:2026/01/01").',
+      '- To list folders/labels, use action "list_labels".',
+      '- Never claim you read, sent, or searched emails without actually calling manage_email.',
+      '- When composing emails, draft professionally unless the user specifies otherwise. Include a greeting and sign-off.'
     ];
     parts.push(toolPolicyLines.join('\n'));
   }

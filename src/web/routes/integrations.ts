@@ -1,11 +1,17 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth';
-import { GoogleCalendarService } from '../../services/google-calendar';
+import { GoogleAuthManager } from '../../services/google-auth';
 import { getConfig } from '../../utils/config';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.modify'
+].join(' ');
 
 /** In-memory OAuth state store with 10-minute TTL. */
 interface OAuthState {
@@ -34,7 +40,7 @@ function generateState(): string {
 }
 
 export function createIntegrationsRoutes(
-  googleCalendar: GoogleCalendarService
+  googleAuth: GoogleAuthManager
 ): Router {
   const router = Router();
 
@@ -45,11 +51,11 @@ export function createIntegrationsRoutes(
   router.get('/google/status', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
-      const connected = await googleCalendar.isConnected(userId);
+      const connected = await googleAuth.isConnected(userId);
       res.json({ connected });
     } catch (error: any) {
       console.error('[Integrations] Google status error:', error.message);
-      res.status(500).json({ error: 'Failed to check Google Calendar status' });
+      res.status(500).json({ error: 'Failed to check Google status' });
     }
   });
 
@@ -174,14 +180,14 @@ export function createIntegrationsRoutes(
       }
 
       // Store the tokens in the credential vault
-      await googleCalendar.storeTokens(
+      await googleAuth.storeTokens(
         stateData.userId,
         tokenData.access_token,
         tokenData.refresh_token,
         tokenData.expires_in || 3600
       );
 
-      console.log(`[Integrations] Google Calendar connected for user ${stateData.userId}`);
+      console.log(`[Integrations] Google connected for user ${stateData.userId}`);
       res.redirect('/settings/integrations?success=google_connected');
     } catch (error: any) {
       console.error('[Integrations] Google callback error:', error.message);
@@ -196,12 +202,37 @@ export function createIntegrationsRoutes(
   router.post('/google/disconnect', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
-      await googleCalendar.disconnect(userId);
-      console.log(`[Integrations] Google Calendar disconnected for user ${userId}`);
+      await googleAuth.disconnect(userId);
+      console.log(`[Integrations] Google disconnected for user ${userId}`);
       res.json({ success: true });
     } catch (error: any) {
       console.error('[Integrations] Google disconnect error:', error.message);
-      res.status(500).json({ error: 'Failed to disconnect Google Calendar' });
+      res.status(500).json({ error: 'Failed to disconnect Google' });
+    }
+  });
+
+  /**
+   * GET /api/integrations/google/gmail-status
+   * Check if the user's Google tokens include Gmail scopes.
+   * Used by the frontend to detect if re-authorization is needed.
+   */
+  router.get('/google/gmail-status', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const connected = await googleAuth.isConnected(userId);
+      if (!connected) {
+        res.json({ gmailAuthorized: false });
+        return;
+      }
+
+      // Try a lightweight Gmail API call to verify Gmail scopes are granted
+      const token = await googleAuth.getValidAccessToken(userId);
+      const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/labels?maxResults=1', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      res.json({ gmailAuthorized: response.ok });
+    } catch {
+      res.json({ gmailAuthorized: false });
     }
   });
 

@@ -21,7 +21,7 @@ import { ScriptGenerator } from '../services/script-generator';
 import { WorkflowEngine } from '../services/workflow-engine';
 import { WorkflowScheduler } from '../services/workflow-scheduler';
 import { CredentialVault } from '../services/credential-vault';
-import { GoogleCalendarService } from '../services/google-calendar';
+import { GoogleAuthManager } from '../services/google-auth';
 import { createScriptsRoutes } from './routes/scripts';
 import { createWorkflowsRoutes } from './routes/workflows';
 import { createSchedulesRoutes } from './routes/schedules';
@@ -45,7 +45,8 @@ export interface WebServerConfig {
   workflowEngine?: WorkflowEngine;
   workflowScheduler?: WorkflowScheduler;
   credentialVault?: CredentialVault;
-  googleCalendar?: GoogleCalendarService;
+  googleAuth?: GoogleAuthManager;
+  gmail?: import('../services/gmail').GmailService;
 }
 
 /**
@@ -83,8 +84,8 @@ export function createWebServer(config: WebServerConfig): express.Express {
   if (config.credentialVault) {
     app.use('/api/credentials', createCredentialsRoutes(config.credentialVault));
   }
-  if (config.googleCalendar) {
-    app.use('/api/integrations', createIntegrationsRoutes(config.googleCalendar));
+  if (config.googleAuth) {
+    app.use('/api/integrations', createIntegrationsRoutes(config.googleAuth));
   }
   app.use('/api/channel-identities', createChannelIdentitiesRoutes(db));
   app.use('/api/reminders', createRemindersRoutes(db));

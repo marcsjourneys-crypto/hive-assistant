@@ -745,6 +745,8 @@ export const templates = {
 export const integrations = {
   googleStatus: () =>
     request<{ connected: boolean }>('/integrations/google/status'),
+  gmailStatus: () =>
+    request<{ gmailAuthorized: boolean }>('/integrations/google/gmail-status'),
   googleDisconnect: () =>
     request<{ success: boolean }>('/integrations/google/disconnect', {
       method: 'POST',
