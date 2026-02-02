@@ -423,11 +423,11 @@ export default function System() {
           </div>
         </div>
 
-        {/* Google Calendar (OAuth) */}
+        {/* Google (OAuth) */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="font-semibold mb-3">Google Calendar (OAuth)</h2>
+          <h2 className="font-semibold mb-3">Google (OAuth)</h2>
           <p className="text-xs text-gray-400 mb-3">
-            Configure Google OAuth to let users connect their calendars via Settings &gt; Integrations.
+            Configure Google OAuth to let users connect their Calendar and Gmail via Settings &gt; Integrations.
           </p>
           <div className="space-y-3">
             <div>
