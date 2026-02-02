@@ -353,7 +353,7 @@ const fetchUrlTool: ToolDefinition = {
 /** Metadata for the manage_reminders tool (used for tool selector UI). */
 const MANAGE_REMINDERS_META = {
   name: 'manage_reminders',
-  description: 'Add, list, complete, or remove reminders for the user. Use this when the user asks to be reminded of something, wants to see their reminders, or marks a reminder as done.'
+  description: 'Add, list, find, complete, or remove reminders for the user. Supports searching by text so you can complete or remove reminders by description without needing the ID. You MUST call this tool for any reminder operation — never fake a response.'
 };
 
 /** Schema for the manage_reminders tool. */
@@ -362,8 +362,8 @@ const MANAGE_REMINDERS_SCHEMA: Record<string, unknown> = {
   properties: {
     action: {
       type: 'string',
-      enum: ['add', 'list', 'complete', 'remove', 'set_due'],
-      description: 'The action to perform: add a new reminder, list existing reminders, complete a reminder, remove a reminder, or set/change a due date.'
+      enum: ['add', 'list', 'find', 'complete', 'remove', 'set_due'],
+      description: 'The action to perform: add a new reminder, list existing reminders, find reminders by text, complete a reminder, remove a reminder, or set/change a due date.'
     },
     text: {
       type: 'string',
@@ -371,7 +371,11 @@ const MANAGE_REMINDERS_SCHEMA: Record<string, unknown> = {
     },
     reminderId: {
       type: 'string',
-      description: 'The reminder ID (required for "complete", "remove", and "set_due" actions).'
+      description: 'The reminder ID (required for "remove" and "set_due" actions; optional for "complete" if searchText is provided).'
+    },
+    searchText: {
+      type: 'string',
+      description: 'Search text to find reminders by description (case-insensitive substring match). Use with "find" action to search, or with "complete"/"remove" action to find-and-act in one step.'
     },
     dueAt: {
       type: 'string',
@@ -392,12 +396,20 @@ function createRemindersTool(userId: string, db: Database): ToolDefinition {
     description: MANAGE_REMINDERS_META.description,
     input_schema: MANAGE_REMINDERS_SCHEMA,
     handler: async (input: {
-      action: 'add' | 'list' | 'complete' | 'remove' | 'set_due';
+      action: 'add' | 'list' | 'find' | 'complete' | 'remove' | 'set_due';
       text?: string;
       reminderId?: string;
+      searchText?: string;
       dueAt?: string | null;
       includeComplete?: boolean;
     }) => {
+      // Helper: find reminders matching searchText (case-insensitive substring)
+      const findByText = async (searchText: string) => {
+        const all = await db.getReminders(userId, false);
+        const query = searchText.toLowerCase();
+        return all.filter(r => r.text.toLowerCase().includes(query));
+      };
+
       switch (input.action) {
         case 'add': {
           if (!input.text?.trim()) {
@@ -436,9 +448,43 @@ function createRemindersTool(userId: string, db: Database): ToolDefinition {
             total: reminders.length
           };
         }
+        case 'find': {
+          if (!input.searchText?.trim()) {
+            return { error: 'searchText is required for "find" action.' };
+          }
+          const matches = await findByText(input.searchText);
+          return {
+            reminders: matches.map(r => ({
+              id: r.id,
+              text: r.text,
+              isComplete: r.isComplete,
+              dueAt: r.dueAt?.toISOString() || null
+            })),
+            total: matches.length
+          };
+        }
         case 'complete': {
+          // Allow completing by searchText (find-and-complete in one step)
+          if (!input.reminderId && input.searchText?.trim()) {
+            const matches = await findByText(input.searchText);
+            if (matches.length === 0) {
+              return { error: `No active reminders found matching "${input.searchText}".` };
+            }
+            if (matches.length > 1) {
+              return {
+                error: 'Multiple reminders match that description. Please be more specific or use the reminderId.',
+                matches: matches.map(r => ({ id: r.id, text: r.text, dueAt: r.dueAt?.toISOString() || null }))
+              };
+            }
+            const match = matches[0];
+            const updated = await db.updateReminder(match.id, { isComplete: true });
+            return {
+              success: true,
+              reminder: { id: updated.id, text: updated.text, isComplete: updated.isComplete }
+            };
+          }
           if (!input.reminderId) {
-            return { error: 'reminderId is required for "complete" action.' };
+            return { error: 'reminderId or searchText is required for "complete" action.' };
           }
           const updated = await db.updateReminder(input.reminderId, { isComplete: true });
           return {
@@ -447,8 +493,23 @@ function createRemindersTool(userId: string, db: Database): ToolDefinition {
           };
         }
         case 'remove': {
+          // Allow removing by searchText (find-and-remove in one step)
+          if (!input.reminderId && input.searchText?.trim()) {
+            const matches = await findByText(input.searchText);
+            if (matches.length === 0) {
+              return { error: `No active reminders found matching "${input.searchText}".` };
+            }
+            if (matches.length > 1) {
+              return {
+                error: 'Multiple reminders match that description. Please be more specific or use the reminderId.',
+                matches: matches.map(r => ({ id: r.id, text: r.text, dueAt: r.dueAt?.toISOString() || null }))
+              };
+            }
+            await db.deleteReminder(matches[0].id);
+            return { success: true, removed: matches[0].id, text: matches[0].text };
+          }
           if (!input.reminderId) {
-            return { error: 'reminderId is required for "remove" action.' };
+            return { error: 'reminderId or searchText is required for "remove" action.' };
           }
           await db.deleteReminder(input.reminderId);
           return { success: true, removed: input.reminderId };
@@ -469,7 +530,7 @@ function createRemindersTool(userId: string, db: Database): ToolDefinition {
           };
         }
         default:
-          return { error: `Unknown action: ${input.action}. Use add, list, complete, remove, or set_due.` };
+          return { error: `Unknown action: ${input.action}. Use add, list, find, complete, remove, or set_due.` };
       }
     }
   };

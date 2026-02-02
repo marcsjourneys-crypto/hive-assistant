@@ -38,7 +38,8 @@ export function buildContext(
   userMessage: string,
   recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
   skill?: SkillContent | null,
-  overrides?: UserPromptOverrides
+  overrides?: UserPromptOverrides,
+  activeTools?: string[]
 ): BuiltContext {
   const parts: string[] = [];
 
@@ -86,6 +87,25 @@ export function buildContext(
   } catch {
     // If timezone is invalid, fall back to UTC
     parts.push(`Current date and time: ${new Date().toUTCString()}.`);
+  }
+
+  // Tool usage policy — only included when tools are active.
+  // Prevents the AI from hallucinating tool results instead of actually calling them.
+  if (activeTools && activeTools.length > 0) {
+    const toolPolicyLines = [
+      '## Tool Usage Policy',
+      '',
+      'You have access to the following tools: ' + activeTools.join(', ') + '.',
+      '',
+      'CRITICAL: When the user asks you to perform an action that has a corresponding tool, you MUST call the tool. Never simulate, fake, or pretend to perform these operations without actually invoking the tool.',
+      '',
+      'For reminders specifically:',
+      '- To complete a reminder, use manage_reminders with action "complete" and searchText matching the reminder description.',
+      '- To remove a reminder, use action "remove" with searchText matching the description.',
+      '- You can search reminders by text — you do NOT need the ID. Use searchText instead.',
+      '- Never say you completed or removed a reminder without calling manage_reminders.'
+    ];
+    parts.push(toolPolicyLines.join('\n'));
   }
 
   // Full user profile/bio injection (only when orchestrator requests it).

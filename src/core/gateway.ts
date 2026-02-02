@@ -265,15 +265,26 @@ export class Gateway {
       }
     }
 
-    // 9. Build context (exclude current message from history; buildContext adds it)
+    // 9. Determine active tools (needed before building context for tool policy injection).
+    const toolNames = new Set(options?.tools || []);
+    toolNames.add('manage_reminders');
+    toolNames.add('run_script');
+    // Include send_email if Brevo is configured
+    const cfg = getConfig();
+    if (cfg.brevo?.apiKey) {
+      toolNames.add('send_email');
+    }
+    const activeToolNames = [...toolNames];
+
+    // 10. Build context (exclude current message from history; buildContext adds it)
     const historyForContext = recentMessages.slice(0, -1).map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.content
     }));
-    const context = buildContext(routing, message, historyForContext, skill, overrides);
+    const context = buildContext(routing, message, historyForContext, skill, overrides, activeToolNames);
     if (debug) console.log(`  [gateway] Context built: ~${context.estimatedTokens} tokens, system prompt ${context.systemPrompt.length} chars`);
 
-    // 10. Resolve final model: use executor config mapping based on complexity,
+    // 11. Resolve final model: use executor config mapping based on complexity,
     //     with orchestrator's suggestedModel as a hint.
     const resolvedModel = this.resolveModel(routing);
     console.log(`  [gateway] Calling ${resolvedModel} API... (orchestrator suggested ${routing.suggestedModel}, complexity=${routing.complexity})`);
@@ -291,19 +302,10 @@ export class Gateway {
         systemPrompt: context.systemPrompt
       };
 
-      // Resolve tool names to definitions if provided.
+      // Resolve tool names to definitions.
       // Pass user context so user-scoped tools (e.g. manage_reminders) get bound correctly.
-      // Always include manage_reminders — the AI naturally decides when to use it.
       const toolContext: ToolContext = { userId, db: this.db, scriptRunner: this.scriptRunner };
-      const toolNames = new Set(options?.tools || []);
-      toolNames.add('manage_reminders');
-      toolNames.add('run_script');
-      // Include send_email if Brevo is configured
-      const cfg = getConfig();
-      if (cfg.brevo?.apiKey) {
-        toolNames.add('send_email');
-      }
-      const resolvedTools = getTools([...toolNames], toolContext);
+      const resolvedTools = getTools(activeToolNames, toolContext);
       if (resolvedTools.length > 0) {
         executeOptions.tools = resolvedTools;
         console.log(`  [gateway] Passing ${resolvedTools.length} tool(s) to executor: ${resolvedTools.map(t => t.name).join(', ')}`);
