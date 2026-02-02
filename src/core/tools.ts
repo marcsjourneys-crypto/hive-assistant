@@ -579,9 +579,11 @@ function createSendEmailTool(userId: string, db: Database): ToolDefinition {
         return { error: 'Email is not configured. An admin needs to set up Brevo API credentials.' };
       }
 
-      // Look up the user's email to use as the FROM address
-      const userAuth = await db.getUserAuthByUserId(userId);
-      const senderEmail = userAuth?.email || config.brevo.defaultSenderEmail;
+      // Use the Brevo-verified sender address (required by Brevo).
+      // Fall back to user's login email only if no default sender is configured.
+      const senderEmail = config.brevo.defaultSenderEmail
+        || (await db.getUserAuthByUserId(userId))?.email
+        || '';
       const senderName = config.brevo.defaultSenderName || 'Hive Assistant';
 
       // Build Brevo API payload
