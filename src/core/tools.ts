@@ -610,10 +610,12 @@ function createSendEmailTool(userId: string, db: Database): ToolDefinition {
 
         if (!response.ok) {
           const errBody = await response.text();
+          console.error(`  [send_email] Brevo API error (${response.status}):`, errBody);
           return { error: `Brevo API error (${response.status}): ${errBody}` };
         }
 
         const result: any = await response.json();
+        console.log(`  [send_email] Sent to ${input.to}, messageId: ${result.messageId}`);
         return {
           sent: true,
           to: input.to,
@@ -621,6 +623,7 @@ function createSendEmailTool(userId: string, db: Database): ToolDefinition {
           messageId: result.messageId || null
         };
       } catch (err: any) {
+        console.error(`  [send_email] Failed:`, err.message);
         return { error: `Failed to send email: ${err.message}` };
       }
     }
