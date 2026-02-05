@@ -159,6 +159,19 @@ export interface Reminder {
   notifiedAt?: Date;
 }
 
+export interface Contact {
+  id: string;
+  userId: string;
+  name: string;
+  nickname?: string;
+  email?: string;
+  phone?: string;
+  organization?: string;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface FileMetadata {
   userId: string;
   filename: string;
@@ -219,7 +232,7 @@ export interface Database {
   updateUser(userId: string, updates: Partial<User>): Promise<User>;
   
   // Conversations
-  getConversation(conversationId: string): Promise<Conversation | null>;
+  getConversation(conversationId: string, userId?: string): Promise<Conversation | null>;
   getConversations(userId: string, limit?: number): Promise<Conversation[]>;
   createConversation(conversation: Omit<Conversation, 'createdAt' | 'updatedAt'>): Promise<Conversation>;
   updateConversation(conversationId: string, updates: Partial<Conversation>): Promise<Conversation>;
@@ -327,6 +340,14 @@ export interface Database {
   createTemplate(template: Omit<WorkflowTemplate, 'createdAt' | 'updatedAt'>): Promise<WorkflowTemplate>;
   updateTemplate(templateId: string, updates: Partial<WorkflowTemplate>): Promise<WorkflowTemplate>;
   deleteTemplate(templateId: string): Promise<void>;
+
+  // Contacts
+  getContacts(userId: string): Promise<Contact[]>;
+  getContact(contactId: string): Promise<Contact | null>;
+  findContacts(userId: string, query: string): Promise<Contact[]>;
+  createContact(contact: Omit<Contact, 'createdAt' | 'updatedAt'>): Promise<Contact>;
+  updateContact(contactId: string, updates: Partial<Pick<Contact, 'name' | 'nickname' | 'email' | 'phone' | 'organization' | 'notes'>>): Promise<Contact>;
+  deleteContact(contactId: string): Promise<void>;
 
   // Channel Identities
   getChannelIdentity(id: string): Promise<ChannelIdentity | null>;

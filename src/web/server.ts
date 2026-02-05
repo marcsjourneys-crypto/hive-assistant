@@ -28,6 +28,7 @@ import { createSchedulesRoutes } from './routes/schedules';
 import { createCredentialsRoutes } from './routes/credentials';
 import { createChannelIdentitiesRoutes } from './routes/channel-identities';
 import { createRemindersRoutes } from './routes/reminders';
+import { createContactsRoutes } from './routes/contacts';
 import { createFilesRoutes } from './routes/files';
 import { createTemplatesRoutes } from './routes/templates';
 import { createIntegrationsRoutes } from './routes/integrations';
@@ -89,6 +90,7 @@ export function createWebServer(config: WebServerConfig): express.Express {
   }
   app.use('/api/channel-identities', createChannelIdentitiesRoutes(db));
   app.use('/api/reminders', createRemindersRoutes(db));
+  app.use('/api/contacts', createContactsRoutes(db));
   app.use('/api/files', createFilesRoutes(new FileAccessService(db), db));
   app.use('/api/templates', createTemplatesRoutes(db, config.workflowEngine));
   app.get('/api/tools', (_req, res) => { res.json(getToolsMeta()); });

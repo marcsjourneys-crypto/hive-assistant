@@ -16,6 +16,7 @@ export interface UserPromptOverrides {
   profilePrompt?: string;
   basicIdentity?: string;
   fileContext?: string;
+  contactsContext?: string;
 }
 
 /** Maximum number of recent messages to include for context continuity. */
@@ -120,7 +121,14 @@ export function buildContext(
       '- To search emails, use action "search_emails" with a Gmail-syntax query (e.g., "from:boss@company.com is:unread", "subject:invoice after:2026/01/01").',
       '- To list folders/labels, use action "list_labels".',
       '- Never claim you read, sent, or searched emails without actually calling manage_email.',
-      '- When composing emails, draft professionally unless the user specifies otherwise. Include a greeting and sign-off.'
+      '- When composing emails, draft professionally unless the user specifies otherwise. Include a greeting and sign-off.',
+      '',
+      'For contacts (when manage_contacts is available):',
+      '- When the user mentions a person by name, check the contacts list above first.',
+      '- If the name matches a known contact, use their stored email/phone — do NOT ask the user for it.',
+      '- If no match is found, ask the user for the contact details.',
+      '- You can add new contacts when the user provides someone\'s info (e.g. "add Kai to my contacts, email kai@example.com").',
+      '- Never guess an email address or phone number that isn\'t in the contacts list or provided by the user.'
     ];
     parts.push(toolPolicyLines.join('\n'));
   }
@@ -145,6 +153,11 @@ export function buildContext(
   // User's file listing (when available)
   if (overrides?.fileContext) {
     parts.push(overrides.fileContext);
+  }
+
+  // User's contacts (injected when communication tools are active)
+  if (overrides?.contactsContext) {
+    parts.push(overrides.contactsContext);
   }
 
   // Skill instructions

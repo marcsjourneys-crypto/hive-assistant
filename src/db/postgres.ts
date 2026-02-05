@@ -1,4 +1,4 @@
-import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog, Script, Workflow, WorkflowRun, Schedule, UserCredential, ChannelIdentity, Reminder, FileMetadata, WorkflowTemplate } from './interface';
+import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog, Script, Workflow, WorkflowRun, Schedule, UserCredential, ChannelIdentity, Reminder, FileMetadata, WorkflowTemplate, Contact } from './interface';
 
 /**
  * PostgreSQL database implementation - placeholder.
@@ -14,7 +14,7 @@ export class PostgresDatabase implements IDatabase {
   async getUser(_userId: string): Promise<User | null> { throw new Error('Not implemented'); }
   async createUser(_user: Omit<User, 'createdAt' | 'updatedAt'>): Promise<User> { throw new Error('Not implemented'); }
   async updateUser(_userId: string, _updates: Partial<User>): Promise<User> { throw new Error('Not implemented'); }
-  async getConversation(_conversationId: string): Promise<Conversation | null> { throw new Error('Not implemented'); }
+  async getConversation(_conversationId: string, _userId?: string): Promise<Conversation | null> { throw new Error('Not implemented'); }
   async getConversations(_userId: string, _limit?: number): Promise<Conversation[]> { throw new Error('Not implemented'); }
   async createConversation(_conversation: Omit<Conversation, 'createdAt' | 'updatedAt'>): Promise<Conversation> { throw new Error('Not implemented'); }
   async updateConversation(_conversationId: string, _updates: Partial<Conversation>): Promise<Conversation> { throw new Error('Not implemented'); }
@@ -93,4 +93,10 @@ export class PostgresDatabase implements IDatabase {
   async findOwnerByChannelUserId(_channelUserId: string, _channel: string): Promise<string | null> { throw new Error('Not implemented'); }
   async createChannelIdentity(_identity: Omit<ChannelIdentity, 'createdAt' | 'updatedAt'>): Promise<ChannelIdentity> { throw new Error('Not implemented'); }
   async deleteChannelIdentity(_id: string): Promise<void> { throw new Error('Not implemented'); }
+  async getContacts(_userId: string): Promise<Contact[]> { throw new Error('Not implemented'); }
+  async getContact(_contactId: string): Promise<Contact | null> { throw new Error('Not implemented'); }
+  async findContacts(_userId: string, _query: string): Promise<Contact[]> { throw new Error('Not implemented'); }
+  async createContact(_contact: Omit<Contact, 'createdAt' | 'updatedAt'>): Promise<Contact> { throw new Error('Not implemented'); }
+  async updateContact(_contactId: string, _updates: Partial<Pick<Contact, 'name' | 'nickname' | 'email' | 'phone' | 'organization' | 'notes'>>): Promise<Contact> { throw new Error('Not implemented'); }
+  async deleteContact(_contactId: string): Promise<void> { throw new Error('Not implemented'); }
 }

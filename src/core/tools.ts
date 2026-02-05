@@ -1035,6 +1035,185 @@ function createEmailTool(userId: string, gmail: GmailService): ToolDefinition {
   };
 }
 
+// ─── Tool: manage_contacts (user-scoped factory) ─────────────────────────────
+
+/** Metadata for the manage_contacts tool. */
+const MANAGE_CONTACTS_META = {
+  name: 'manage_contacts',
+  description: 'Add, list, find, update, or delete contacts in the user\'s address book. Use this to store people the user communicates with frequently so you can resolve names to email addresses and phone numbers.'
+};
+
+/** Schema for the manage_contacts tool. */
+const MANAGE_CONTACTS_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['add', 'list', 'find', 'update', 'delete'],
+      description: 'The action to perform.'
+    },
+    name: {
+      type: 'string',
+      description: 'Contact name (required for "add").'
+    },
+    nickname: {
+      type: 'string',
+      description: 'Alternate name/nickname (optional).'
+    },
+    email: {
+      type: 'string',
+      description: 'Contact email address (optional).'
+    },
+    phone: {
+      type: 'string',
+      description: 'Contact phone number (optional).'
+    },
+    organization: {
+      type: 'string',
+      description: 'Contact organization/company (optional).'
+    },
+    notes: {
+      type: 'string',
+      description: 'Notes about this contact (optional).'
+    },
+    searchText: {
+      type: 'string',
+      description: 'Search text for "find" action. Matches against name, nickname, email, and phone (case-insensitive).'
+    },
+    contactId: {
+      type: 'string',
+      description: 'Contact ID (required for "update" and "delete").'
+    }
+  },
+  required: ['action']
+};
+
+/** Create a user-scoped manage_contacts tool instance. */
+function createContactsTool(userId: string, db: Database): ToolDefinition {
+  return {
+    name: MANAGE_CONTACTS_META.name,
+    description: MANAGE_CONTACTS_META.description,
+    input_schema: MANAGE_CONTACTS_SCHEMA,
+    handler: async (input: {
+      action: 'add' | 'list' | 'find' | 'update' | 'delete';
+      name?: string;
+      nickname?: string;
+      email?: string;
+      phone?: string;
+      organization?: string;
+      notes?: string;
+      searchText?: string;
+      contactId?: string;
+    }) => {
+      try {
+        switch (input.action) {
+          case 'add': {
+            if (!input.name?.trim()) {
+              return { error: 'Contact name is required for "add" action.' };
+            }
+            const contact = await db.createContact({
+              id: uuidv4(),
+              userId,
+              name: input.name.trim(),
+              nickname: input.nickname?.trim(),
+              email: input.email?.trim(),
+              phone: input.phone?.trim(),
+              organization: input.organization?.trim(),
+              notes: input.notes?.trim()
+            });
+            return {
+              success: true,
+              contact: {
+                id: contact.id,
+                name: contact.name,
+                nickname: contact.nickname || null,
+                email: contact.email || null,
+                phone: contact.phone || null,
+                organization: contact.organization || null
+              }
+            };
+          }
+
+          case 'list': {
+            const contacts = await db.getContacts(userId);
+            return {
+              contacts: contacts.map(c => ({
+                id: c.id,
+                name: c.name,
+                nickname: c.nickname || null,
+                email: c.email || null,
+                phone: c.phone || null,
+                organization: c.organization || null,
+                notes: c.notes || null
+              })),
+              total: contacts.length
+            };
+          }
+
+          case 'find': {
+            if (!input.searchText?.trim()) {
+              return { error: 'searchText is required for "find" action.' };
+            }
+            const matches = await db.findContacts(userId, input.searchText.trim());
+            return {
+              contacts: matches.map(c => ({
+                id: c.id,
+                name: c.name,
+                nickname: c.nickname || null,
+                email: c.email || null,
+                phone: c.phone || null,
+                organization: c.organization || null,
+                notes: c.notes || null
+              })),
+              total: matches.length
+            };
+          }
+
+          case 'update': {
+            if (!input.contactId) {
+              return { error: 'contactId is required for "update" action.' };
+            }
+            const updates: Record<string, string | undefined> = {};
+            if (input.name !== undefined) updates.name = input.name.trim();
+            if (input.nickname !== undefined) updates.nickname = input.nickname.trim();
+            if (input.email !== undefined) updates.email = input.email.trim();
+            if (input.phone !== undefined) updates.phone = input.phone.trim();
+            if (input.organization !== undefined) updates.organization = input.organization.trim();
+            if (input.notes !== undefined) updates.notes = input.notes.trim();
+
+            const updated = await db.updateContact(input.contactId, updates);
+            return {
+              success: true,
+              contact: {
+                id: updated.id,
+                name: updated.name,
+                nickname: updated.nickname || null,
+                email: updated.email || null,
+                phone: updated.phone || null,
+                organization: updated.organization || null
+              }
+            };
+          }
+
+          case 'delete': {
+            if (!input.contactId) {
+              return { error: 'contactId is required for "delete" action.' };
+            }
+            await db.deleteContact(input.contactId);
+            return { success: true, deleted: input.contactId };
+          }
+
+          default:
+            return { error: `Unknown action: ${input.action}. Use add, list, find, update, or delete.` };
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { error: `Contacts error: ${message}` };
+      }
+    }
+  };
+}
+
 // ─── Tool Registry ───────────────────────────────────────────────────────────
 
 /** Static tools that don't need user context. */
@@ -1044,7 +1223,7 @@ const STATIC_TOOL_REGISTRY: Record<string, ToolDefinition> = {
 };
 
 /** Names of tools that require user context (created via factory). */
-const USER_SCOPED_TOOLS = new Set(['manage_reminders', 'run_script', 'send_email', 'manage_calendar', 'manage_email']);
+const USER_SCOPED_TOOLS = new Set(['manage_reminders', 'run_script', 'send_email', 'manage_calendar', 'manage_email', 'manage_contacts']);
 
 /** Context needed to create user-scoped tool instances. */
 export interface ToolContext {
@@ -1084,6 +1263,8 @@ export function getTools(names: string[], context?: ToolContext): ToolDefinition
         tools.push(createCalendarTool(context.userId, context.googleCalendar));
       } else if (name === 'manage_email' && context.gmail) {
         tools.push(createEmailTool(context.userId, context.gmail));
+      } else if (name === 'manage_contacts') {
+        tools.push(createContactsTool(context.userId, context.db));
       }
     }
   }
@@ -1106,7 +1287,8 @@ const TOOL_CATEGORIES: Record<string, string> = {
   manage_reminders: 'Utilities',
   send_email: 'Communication',
   manage_calendar: 'Productivity',
-  manage_email: 'Communication'
+  manage_email: 'Communication',
+  manage_contacts: 'Productivity'
 };
 
 /**
@@ -1119,7 +1301,7 @@ export function getToolsMeta(): Array<{ name: string; description: string; categ
     description: t.description,
     category: TOOL_CATEGORIES[t.name] || 'Other'
   }));
-  const userScopedMeta = [MANAGE_REMINDERS_META, RUN_SCRIPT_META, SEND_EMAIL_META, MANAGE_CALENDAR_META, MANAGE_EMAIL_META].map(m => ({
+  const userScopedMeta = [MANAGE_REMINDERS_META, RUN_SCRIPT_META, SEND_EMAIL_META, MANAGE_CALENDAR_META, MANAGE_EMAIL_META, MANAGE_CONTACTS_META].map(m => ({
     ...m,
     category: TOOL_CATEGORIES[m.name] || 'Other'
   }));

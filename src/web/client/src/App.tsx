@@ -15,6 +15,7 @@ import CredentialsPage from './pages/Credentials';
 import Channels from './pages/Channels';
 import ChannelIdentitiesPage from './pages/ChannelIdentities';
 import RemindersPage from './pages/Reminders';
+import ContactsPage from './pages/Contacts';
 import FilesPage from './pages/Files';
 import TemplatesPage from './pages/Templates';
 import ToolsPage from './pages/Tools';
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="settings/channels" element={<Channels />} />
         <Route path="settings/identities" element={<ChannelIdentitiesPage />} />
         <Route path="settings/reminders" element={<RemindersPage />} />
+        <Route path="settings/contacts" element={<ContactsPage />} />
         <Route path="settings/files" element={<FilesPage />} />
         <Route path="settings/integrations" element={<IntegrationsPage />} />
         <Route path="automation/templates" element={<TemplatesPage />} />

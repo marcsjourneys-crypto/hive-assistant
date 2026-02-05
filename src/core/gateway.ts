@@ -273,10 +273,38 @@ export class Gateway {
       }
     }
 
+    // 8c. Inject contacts context for communication-related messages
+    const hasCommunicationTools = true; // contacts are always loaded; emails/calendar may also be active
+    if (hasCommunicationTools) {
+      try {
+        const contacts = await this.db.getContacts(userId);
+        if (contacts.length > 0) {
+          const contactLines = contacts
+            .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+            .slice(0, 30)
+            .map(c => {
+              const parts = [c.name];
+              if (c.nickname) parts[0] += ` (aka ${c.nickname})`;
+              const details: string[] = [];
+              if (c.email) details.push(c.email);
+              if (c.phone) details.push(c.phone);
+              if (c.organization) details.push(c.organization);
+              if (details.length > 0) parts.push(details.join(', '));
+              return `- ${parts.join(' — ')}`;
+            });
+          if (!overrides) overrides = {};
+          overrides.contactsContext = `## Your Contacts\n${contactLines.join('\n')}`;
+        }
+      } catch {
+        // Non-critical: skip contacts context if loading fails
+      }
+    }
+
     // 9. Determine active tools (needed before building context for tool policy injection).
     const toolNames = new Set(options?.tools || []);
     toolNames.add('manage_reminders');
     toolNames.add('run_script');
+    toolNames.add('manage_contacts');
     // Include Google services if user has connected their Google account
     const cfg = getConfig();
     let googleConnected = false;

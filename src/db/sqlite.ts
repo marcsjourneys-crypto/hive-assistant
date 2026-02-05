@@ -21,7 +21,8 @@ import {
   ChannelIdentity,
   Reminder,
   FileMetadata,
-  WorkflowTemplate
+  WorkflowTemplate,
+  Contact
 } from './interface';
 
 export class SQLiteDatabase implements IDatabase {
@@ -268,6 +269,20 @@ export class SQLiteDatabase implements IDatabase {
         PRIMARY KEY (user_id, filename)
       );
 
+      CREATE TABLE IF NOT EXISTS contacts (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        nickname TEXT,
+        email TEXT,
+        phone TEXT,
+        organization TEXT,
+        notes TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS workflow_templates (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -295,6 +310,7 @@ export class SQLiteDatabase implements IDatabase {
       CREATE INDEX IF NOT EXISTS idx_channel_identities_owner ON channel_identities(owner_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_identities_uniq ON channel_identities(owner_id, channel, channel_user_id);
       CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id);
+      CREATE INDEX IF NOT EXISTS idx_contacts_user ON contacts(user_id);
     `);
 
     // Migration: add due_at and notified_at columns to reminders (safe for existing DBs)
@@ -346,8 +362,13 @@ export class SQLiteDatabase implements IDatabase {
   }
   
   // Conversations
-  async getConversation(conversationId: string): Promise<Conversation | null> {
-    const row = this.db.prepare('SELECT * FROM conversations WHERE id = ?').get(conversationId) as any;
+  async getConversation(conversationId: string, userId?: string): Promise<Conversation | null> {
+    let row: any;
+    if (userId) {
+      row = this.db.prepare('SELECT * FROM conversations WHERE id = ? AND user_id = ?').get(conversationId, userId) as any;
+    } else {
+      row = this.db.prepare('SELECT * FROM conversations WHERE id = ?').get(conversationId) as any;
+    }
     if (!row) return null;
     return this.mapConversation(row);
   }
@@ -1181,6 +1202,64 @@ export class SQLiteDatabase implements IDatabase {
     this.db.prepare('DELETE FROM channel_identities WHERE id = ?').run(id);
   }
 
+  // Contacts
+  async getContacts(userId: string): Promise<Contact[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM contacts WHERE user_id = ? ORDER BY name ASC'
+    ).all(userId) as any[];
+    return rows.map(row => this.mapContact(row));
+  }
+
+  async getContact(contactId: string): Promise<Contact | null> {
+    const row = this.db.prepare('SELECT * FROM contacts WHERE id = ?').get(contactId) as any;
+    if (!row) return null;
+    return this.mapContact(row);
+  }
+
+  async findContacts(userId: string, query: string): Promise<Contact[]> {
+    const pattern = `%${query}%`;
+    const rows = this.db.prepare(`
+      SELECT * FROM contacts
+      WHERE user_id = ? AND (name LIKE ? OR nickname LIKE ? OR email LIKE ? OR phone LIKE ?)
+      ORDER BY name ASC
+    `).all(userId, pattern, pattern, pattern, pattern) as any[];
+    return rows.map(row => this.mapContact(row));
+  }
+
+  async createContact(contact: Omit<Contact, 'createdAt' | 'updatedAt'>): Promise<Contact> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO contacts (id, user_id, name, nickname, email, phone, organization, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      contact.id, contact.userId, contact.name, contact.nickname || null,
+      contact.email || null, contact.phone || null, contact.organization || null,
+      contact.notes || null, now, now
+    );
+    return this.getContact(contact.id) as Promise<Contact>;
+  }
+
+  async updateContact(contactId: string, updates: Partial<Pick<Contact, 'name' | 'nickname' | 'email' | 'phone' | 'organization' | 'notes'>>): Promise<Contact> {
+    const now = new Date().toISOString();
+    const sets: string[] = ['updated_at = ?'];
+    const values: any[] = [now];
+
+    if (updates.name !== undefined) { sets.push('name = ?'); values.push(updates.name); }
+    if (updates.nickname !== undefined) { sets.push('nickname = ?'); values.push(updates.nickname || null); }
+    if (updates.email !== undefined) { sets.push('email = ?'); values.push(updates.email || null); }
+    if (updates.phone !== undefined) { sets.push('phone = ?'); values.push(updates.phone || null); }
+    if (updates.organization !== undefined) { sets.push('organization = ?'); values.push(updates.organization || null); }
+    if (updates.notes !== undefined) { sets.push('notes = ?'); values.push(updates.notes || null); }
+
+    values.push(contactId);
+    this.db.prepare(`UPDATE contacts SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    return this.getContact(contactId) as Promise<Contact>;
+  }
+
+  async deleteContact(contactId: string): Promise<void> {
+    this.db.prepare('DELETE FROM contacts WHERE id = ?').run(contactId);
+  }
+
   // Mappers
   private mapUser(row: any): User {
     return {
@@ -1419,6 +1498,21 @@ export class SQLiteDatabase implements IDatabase {
       channel: row.channel,
       channelUserId: row.channel_user_id,
       label: row.label || '',
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
+    };
+  }
+
+  private mapContact(row: any): Contact {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      nickname: row.nickname || undefined,
+      email: row.email || undefined,
+      phone: row.phone || undefined,
+      organization: row.organization || undefined,
+      notes: row.notes || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };
