@@ -87,7 +87,7 @@ export function createWorkflowsRoutes(db: IDatabase, workflowEngine?: WorkflowEn
         name: name.trim(),
         description: (description || '').trim(),
         stepsJson: JSON.stringify(steps),
-        isActive: false
+        isActive: true  // Default to active so workflows can be triggered immediately
       });
 
       res.status(201).json(workflow);

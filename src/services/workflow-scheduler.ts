@@ -28,9 +28,14 @@ export class WorkflowScheduler {
    */
   async start(): Promise<void> {
     const schedules = await this.db.getActiveSchedules();
+    console.log(`  [scheduler] Loading ${schedules.length} active schedule(s)...`);
+
     for (const schedule of schedules) {
+      const nextRun = WorkflowScheduler.getNextRunTime(schedule.cronExpression, schedule.timezone);
+      console.log(`  [scheduler] Schedule ${schedule.id} (workflow ${schedule.workflowId}): cron="${schedule.cronExpression}" tz="${schedule.timezone}" nextRun=${nextRun?.toISOString() || 'INVALID'}`);
       this.registerJob(schedule.id, schedule.cronExpression, schedule.timezone, schedule.ownerId, schedule.workflowId);
     }
+
     console.log(`  [scheduler] Started with ${schedules.length} active schedule(s)`);
   }
 
@@ -89,7 +94,8 @@ export class WorkflowScheduler {
     try {
       const interval = CronExpressionParser.parse(cronExpression, { tz: timezone });
       return interval.next().toDate();
-    } catch {
+    } catch (err) {
+      console.error(`  [scheduler] Failed to parse cron "${cronExpression}" with timezone "${timezone}":`, err);
       return null;
     }
   }
@@ -105,22 +111,37 @@ export class WorkflowScheduler {
     workflowId: string
   ): void {
     if (!cron.validate(cronExpression)) {
-      console.error(`  [scheduler] Invalid cron expression for schedule ${scheduleId}: ${cronExpression}`);
+      console.error(`  [scheduler] CRITICAL: Invalid cron expression for schedule ${scheduleId}: "${cronExpression}"`);
       return;
     }
 
+    console.log(`  [scheduler] Registering schedule ${scheduleId}: cron="${cronExpression}" tz="${timezone}" workflow=${workflowId}`);
+
     const task = cron.schedule(cronExpression, async () => {
-      console.log(`  [scheduler] Triggering schedule ${scheduleId} for workflow ${workflowId}`);
+      const tickTime = new Date().toISOString();
+      console.log(`  [scheduler] Cron tick at ${tickTime} for schedule ${scheduleId} (workflow ${workflowId})`);
+
       try {
         await this.workflowEngine.executeWorkflow(workflowId, ownerId);
+        console.log(`  [scheduler] Workflow ${workflowId} executed successfully for schedule ${scheduleId}`);
 
         // Update schedule timestamps
         const now = new Date();
         const nextRun = WorkflowScheduler.getNextRunTime(cronExpression, timezone);
-        await this.db.updateSchedule(scheduleId, {
-          lastRunAt: now,
-          nextRunAt: nextRun || undefined
-        });
+
+        if (!nextRun) {
+          console.error(`  [scheduler] WARNING: Failed to compute next run time for schedule ${scheduleId}`);
+        }
+
+        try {
+          await this.db.updateSchedule(scheduleId, {
+            lastRunAt: now,
+            nextRunAt: nextRun || undefined
+          });
+          console.log(`  [scheduler] Updated schedule ${scheduleId}: lastRun=${now.toISOString()}, nextRun=${nextRun?.toISOString() || 'null'}`);
+        } catch (dbErr: any) {
+          console.error(`  [scheduler] CRITICAL: Failed to update schedule ${scheduleId} in database:`, dbErr.message);
+        }
       } catch (err: any) {
         console.error(`  [scheduler] Schedule ${scheduleId} execution failed:`, err.message);
       }

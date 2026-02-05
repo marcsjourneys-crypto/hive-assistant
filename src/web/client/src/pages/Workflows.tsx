@@ -56,6 +56,7 @@ export default function WorkflowsPage() {
   const [runHistory, setRunHistory] = useState<WorkflowRunInfo[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
+  const [toggling, setToggling] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -271,6 +272,18 @@ export default function WorkflowsPage() {
       setError(err.message);
     } finally {
       setRunning(null);
+    }
+  };
+
+  const handleToggleActive = async (wf: WorkflowInfo) => {
+    setToggling(wf.id);
+    try {
+      await workflows.update(wf.id, { isActive: !wf.isActive });
+      await loadData();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setToggling(null);
     }
   };
 
@@ -678,9 +691,11 @@ export default function WorkflowsPage() {
                       <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
                         {steps.length} step{steps.length !== 1 ? 's' : ''}
                       </span>
-                      {wf.isActive && (
-                        <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">Active</span>
-                      )}
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        wf.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {wf.isActive ? 'Active' : 'Inactive'}
+                      </span>
                     </div>
                     {wf.description && (
                       <p className="text-sm text-gray-500 mt-1">{wf.description}</p>
@@ -706,6 +721,15 @@ export default function WorkflowsPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                    <button
+                      onClick={() => handleToggleActive(wf)}
+                      disabled={toggling === wf.id}
+                      className={`text-sm transition-colors disabled:opacity-50 ${
+                        wf.isActive ? 'text-amber-600 hover:text-amber-700' : 'text-green-600 hover:text-green-700'
+                      }`}
+                    >
+                      {toggling === wf.id ? '...' : wf.isActive ? 'Pause' : 'Activate'}
+                    </button>
                     <button
                       onClick={() => handleRun(wf.id)}
                       disabled={running === wf.id}
