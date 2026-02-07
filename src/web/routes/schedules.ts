@@ -10,6 +10,30 @@ export function createSchedulesRoutes(db: IDatabase, scheduler?: WorkflowSchedul
   router.use(requireAuth);
 
   /**
+   * GET /api/schedules/status
+   * Get scheduler diagnostic status (admin only).
+   */
+  router.get('/status', async (req: Request, res: Response) => {
+    try {
+      if (!req.user!.isAdmin) {
+        res.status(403).json({ error: 'Admin access required' });
+        return;
+      }
+
+      if (!scheduler) {
+        res.status(503).json({ error: 'Scheduler not available' });
+        return;
+      }
+
+      const status = await scheduler.getStatus();
+      res.json(status);
+    } catch (error: any) {
+      console.error('[Schedules] Status error:', error.message);
+      res.status(500).json({ error: 'Failed to get scheduler status' });
+    }
+  });
+
+  /**
    * GET /api/schedules
    * List schedules for the current user.
    */
