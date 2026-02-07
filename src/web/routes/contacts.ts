@@ -65,7 +65,7 @@ export function createContactsRoutes(db: IDatabase): Router {
    */
   router.post('/', async (req: Request, res: Response) => {
     try {
-      const { name, nickname, email, phone, organization, notes } = req.body;
+      const { name, nickname, email, phone, organization, relationship, notes } = req.body;
       if (!name || typeof name !== 'string' || !name.trim()) {
         res.status(400).json({ error: 'Contact name is required' });
         return;
@@ -79,6 +79,7 @@ export function createContactsRoutes(db: IDatabase): Router {
         email: email?.trim() || undefined,
         phone: phone?.trim() || undefined,
         organization: organization?.trim() || undefined,
+        relationship: relationship?.trim() || undefined,
         notes: notes?.trim() || undefined
       });
 
@@ -95,7 +96,7 @@ export function createContactsRoutes(db: IDatabase): Router {
    */
   router.put('/:id', async (req: Request, res: Response) => {
     try {
-      const { name, nickname, email, phone, organization, notes } = req.body;
+      const { name, nickname, email, phone, organization, relationship, notes } = req.body;
       const updates: Record<string, string | undefined> = {};
 
       if (name !== undefined) updates.name = name?.trim();
@@ -103,6 +104,7 @@ export function createContactsRoutes(db: IDatabase): Router {
       if (email !== undefined) updates.email = email?.trim();
       if (phone !== undefined) updates.phone = phone?.trim();
       if (organization !== undefined) updates.organization = organization?.trim();
+      if (relationship !== undefined) updates.relationship = relationship?.trim();
       if (notes !== undefined) updates.notes = notes?.trim();
 
       const updated = await db.updateContact(req.params.id as string, updates);

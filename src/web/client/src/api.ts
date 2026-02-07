@@ -750,6 +750,7 @@ export interface ContactInfo {
   email?: string;
   phone?: string;
   organization?: string;
+  relationship?: string;
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -759,12 +760,12 @@ export const contacts = {
   list: () => request<ContactInfo[]>('/contacts'),
   get: (id: string) => request<ContactInfo>(`/contacts/${id}`),
   search: (q: string) => request<ContactInfo[]>(`/contacts/search?q=${encodeURIComponent(q)}`),
-  create: (data: { name: string; nickname?: string; email?: string; phone?: string; organization?: string; notes?: string }) =>
+  create: (data: { name: string; nickname?: string; email?: string; phone?: string; organization?: string; relationship?: string; notes?: string }) =>
     request<ContactInfo>('/contacts', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  update: (id: string, updates: { name?: string; nickname?: string; email?: string; phone?: string; organization?: string; notes?: string }) =>
+  update: (id: string, updates: { name?: string; nickname?: string; email?: string; phone?: string; organization?: string; relationship?: string; notes?: string }) =>
     request<ContactInfo>(`/contacts/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates),

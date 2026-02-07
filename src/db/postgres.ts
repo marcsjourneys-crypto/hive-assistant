@@ -97,6 +97,6 @@ export class PostgresDatabase implements IDatabase {
   async getContact(_contactId: string): Promise<Contact | null> { throw new Error('Not implemented'); }
   async findContacts(_userId: string, _query: string): Promise<Contact[]> { throw new Error('Not implemented'); }
   async createContact(_contact: Omit<Contact, 'createdAt' | 'updatedAt'>): Promise<Contact> { throw new Error('Not implemented'); }
-  async updateContact(_contactId: string, _updates: Partial<Pick<Contact, 'name' | 'nickname' | 'email' | 'phone' | 'organization' | 'notes'>>): Promise<Contact> { throw new Error('Not implemented'); }
+  async updateContact(_contactId: string, _updates: Partial<Pick<Contact, 'name' | 'nickname' | 'email' | 'phone' | 'organization' | 'relationship' | 'notes'>>): Promise<Contact> { throw new Error('Not implemented'); }
   async deleteContact(_contactId: string): Promise<void> { throw new Error('Not implemented'); }
 }

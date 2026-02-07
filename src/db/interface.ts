@@ -167,6 +167,7 @@ export interface Contact {
   email?: string;
   phone?: string;
   organization?: string;
+  relationship?: string;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -346,7 +347,7 @@ export interface Database {
   getContact(contactId: string): Promise<Contact | null>;
   findContacts(userId: string, query: string): Promise<Contact[]>;
   createContact(contact: Omit<Contact, 'createdAt' | 'updatedAt'>): Promise<Contact>;
-  updateContact(contactId: string, updates: Partial<Pick<Contact, 'name' | 'nickname' | 'email' | 'phone' | 'organization' | 'notes'>>): Promise<Contact>;
+  updateContact(contactId: string, updates: Partial<Pick<Contact, 'name' | 'nickname' | 'email' | 'phone' | 'organization' | 'relationship' | 'notes'>>): Promise<Contact>;
   deleteContact(contactId: string): Promise<void>;
 
   // Channel Identities

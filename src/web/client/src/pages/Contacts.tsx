@@ -16,6 +16,7 @@ export default function ContactsPage() {
   const [formEmail, setFormEmail] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formOrg, setFormOrg] = useState('');
+  const [formRelationship, setFormRelationship] = useState('');
   const [formNotes, setFormNotes] = useState('');
 
   useEffect(() => {
@@ -54,6 +55,7 @@ export default function ContactsPage() {
     setFormEmail('');
     setFormPhone('');
     setFormOrg('');
+    setFormRelationship('');
     setFormNotes('');
   };
 
@@ -68,6 +70,7 @@ export default function ContactsPage() {
         email: formEmail.trim() || undefined,
         phone: formPhone.trim() || undefined,
         organization: formOrg.trim() || undefined,
+        relationship: formRelationship.trim() || undefined,
         notes: formNotes.trim() || undefined,
       });
       resetForm();
@@ -87,6 +90,7 @@ export default function ContactsPage() {
     setFormEmail(item.email || '');
     setFormPhone(item.phone || '');
     setFormOrg(item.organization || '');
+    setFormRelationship(item.relationship || '');
     setFormNotes(item.notes || '');
   };
 
@@ -106,6 +110,7 @@ export default function ContactsPage() {
         email: formEmail.trim() || undefined,
         phone: formPhone.trim() || undefined,
         organization: formOrg.trim() || undefined,
+        relationship: formRelationship.trim() || undefined,
         notes: formNotes.trim() || undefined,
       });
       setEditing(null);
@@ -234,6 +239,16 @@ export default function ContactsPage() {
               />
             </div>
             <div>
+              <label className="block text-xs text-gray-500 mb-1">Relationship</label>
+              <input
+                type="text"
+                value={formRelationship}
+                onChange={e => setFormRelationship(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-hive-500 focus:border-transparent"
+                placeholder="e.g., son, colleague, client"
+              />
+            </div>
+            <div className="col-span-2">
               <label className="block text-xs text-gray-500 mb-1">Notes</label>
               <input
                 type="text"
@@ -329,6 +344,16 @@ export default function ContactsPage() {
                       />
                     </div>
                     <div>
+                      <label className="block text-xs text-gray-500 mb-1">Relationship</label>
+                      <input
+                        type="text"
+                        value={formRelationship}
+                        onChange={e => setFormRelationship(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-hive-500 focus:border-transparent"
+                        placeholder="e.g., son, colleague, client"
+                      />
+                    </div>
+                    <div className="col-span-2">
                       <label className="block text-xs text-gray-500 mb-1">Notes</label>
                       <input
                         type="text"
@@ -368,6 +393,9 @@ export default function ContactsPage() {
                       <p className="text-sm font-medium text-gray-900">{item.name}</p>
                       {item.nickname && (
                         <span className="text-xs text-gray-400">aka {item.nickname}</span>
+                      )}
+                      {item.relationship && (
+                        <span className="text-xs px-1.5 py-0.5 bg-hive-50 text-hive-700 rounded">{item.relationship}</span>
                       )}
                       {item.organization && (
                         <span className="text-xs text-gray-400">· {item.organization}</span>

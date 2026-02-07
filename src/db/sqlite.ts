@@ -277,6 +277,7 @@ export class SQLiteDatabase implements IDatabase {
         email TEXT,
         phone TEXT,
         organization TEXT,
+        relationship TEXT,
         notes TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -321,6 +322,13 @@ export class SQLiteDatabase implements IDatabase {
     }
     if (!colNames.has('notified_at')) {
       this.db.exec('ALTER TABLE reminders ADD COLUMN notified_at TEXT');
+    }
+
+    // Migration: add relationship column to contacts (safe for existing DBs)
+    const contactCols = this.db.pragma('table_info(contacts)') as Array<{ name: string }>;
+    const contactColNames = new Set(contactCols.map(c => c.name));
+    if (!contactColNames.has('relationship')) {
+      this.db.exec('ALTER TABLE contacts ADD COLUMN relationship TEXT');
     }
   }
   
@@ -1229,17 +1237,17 @@ export class SQLiteDatabase implements IDatabase {
   async createContact(contact: Omit<Contact, 'createdAt' | 'updatedAt'>): Promise<Contact> {
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO contacts (id, user_id, name, nickname, email, phone, organization, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO contacts (id, user_id, name, nickname, email, phone, organization, relationship, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       contact.id, contact.userId, contact.name, contact.nickname || null,
       contact.email || null, contact.phone || null, contact.organization || null,
-      contact.notes || null, now, now
+      contact.relationship || null, contact.notes || null, now, now
     );
     return this.getContact(contact.id) as Promise<Contact>;
   }
 
-  async updateContact(contactId: string, updates: Partial<Pick<Contact, 'name' | 'nickname' | 'email' | 'phone' | 'organization' | 'notes'>>): Promise<Contact> {
+  async updateContact(contactId: string, updates: Partial<Pick<Contact, 'name' | 'nickname' | 'email' | 'phone' | 'organization' | 'relationship' | 'notes'>>): Promise<Contact> {
     const now = new Date().toISOString();
     const sets: string[] = ['updated_at = ?'];
     const values: any[] = [now];
@@ -1249,6 +1257,7 @@ export class SQLiteDatabase implements IDatabase {
     if (updates.email !== undefined) { sets.push('email = ?'); values.push(updates.email || null); }
     if (updates.phone !== undefined) { sets.push('phone = ?'); values.push(updates.phone || null); }
     if (updates.organization !== undefined) { sets.push('organization = ?'); values.push(updates.organization || null); }
+    if (updates.relationship !== undefined) { sets.push('relationship = ?'); values.push(updates.relationship || null); }
     if (updates.notes !== undefined) { sets.push('notes = ?'); values.push(updates.notes || null); }
 
     values.push(contactId);
@@ -1512,6 +1521,7 @@ export class SQLiteDatabase implements IDatabase {
       email: row.email || undefined,
       phone: row.phone || undefined,
       organization: row.organization || undefined,
+      relationship: row.relationship || undefined,
       notes: row.notes || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
