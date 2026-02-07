@@ -175,7 +175,9 @@ export class Gateway {
     //     The small orchestrator model doesn't always classify listing/trigger
     //     phrases correctly (e.g. "can you tell me what workflows I have?").
     //     Catch these locally before calling the orchestrator at all.
-    if (this.workflowTrigger && this.isWorkflowMessage(message)) {
+    //     Skip this check when called from within a workflow step (channel === 'workflow')
+    //     to avoid infinite loops of trying to trigger workflows.
+    if (this.workflowTrigger && channel !== 'workflow' && this.isWorkflowMessage(message)) {
       console.log(`  [gateway] Pre-routing: detected workflow message, skipping orchestrator`);
       const triggerResult = await this.workflowTrigger.handleWorkflowTrigger(userId, message);
       await this.db.addMessage({
@@ -206,7 +208,8 @@ export class Gateway {
 
     // 6b. Intercept workflow trigger intent — execute workflow directly,
     //     skip context building and AI executor call entirely.
-    if (this.workflowTrigger && routing.intent === 'workflow_trigger') {
+    //     Skip when called from within a workflow step to avoid infinite loops.
+    if (this.workflowTrigger && channel !== 'workflow' && routing.intent === 'workflow_trigger') {
       const triggerResult = await this.workflowTrigger.handleWorkflowTrigger(userId, message);
       await this.db.addMessage({
         id: uuidv4(),
