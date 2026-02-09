@@ -11,20 +11,20 @@ const features = [
   {
     title: 'WORKFLOW AUTOMATION',
     description: 'Build multi-step automations visually. Create custom workflows that trigger on schedules or events to automate your daily tasks.',
-    screenshot: '/screenshots/workflows.png',
+    screenshot: '/screenshots/workflow.png',
     placeholder: 'Workflow Builder',
   },
   {
     title: 'MULTI-CHANNEL',
     description: 'Connect via Telegram, WhatsApp, or the web dashboard. Your assistant is always available wherever you prefer to communicate.',
-    screenshot: '/screenshots/telegram.png',
-    placeholder: 'Telegram Chat',
+    screenshot: '/screenshots/multi.png',
+    placeholder: 'Multi-Channel',
   },
   {
     title: 'INTEGRATIONS',
     description: 'Connect your favorite tools. Google Calendar, Gmail, and more integrations to make Hive work seamlessly with your existing setup.',
-    screenshot: '/screenshots/integrations.png',
-    placeholder: 'Integrations Page',
+    screenshot: '/screenshots/integration.png',
+    placeholder: 'Integrations',
   },
 ];
 
