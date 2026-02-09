@@ -22,7 +22,8 @@ import {
   Reminder,
   FileMetadata,
   WorkflowTemplate,
-  Contact
+  Contact,
+  QueryPreset
 } from './interface';
 
 export class SQLiteDatabase implements IDatabase {
@@ -297,6 +298,20 @@ export class SQLiteDatabase implements IDatabase {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS query_presets (
+        id TEXT PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL,
+        label TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        sql TEXT NOT NULL,
+        parameters_json TEXT DEFAULT '{}',
+        output_schema_json TEXT DEFAULT '[]',
+        is_active INTEGER DEFAULT 1,
+        created_by TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
       CREATE INDEX IF NOT EXISTS idx_usage_log_user_id ON usage_log(user_id);
@@ -312,6 +327,7 @@ export class SQLiteDatabase implements IDatabase {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_identities_uniq ON channel_identities(owner_id, channel, channel_user_id);
       CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id);
       CREATE INDEX IF NOT EXISTS idx_contacts_user ON contacts(user_id);
+      CREATE INDEX IF NOT EXISTS idx_query_presets_name ON query_presets(name);
     `);
 
     // Migration: add due_at and notified_at columns to reminders (safe for existing DBs)
@@ -1269,6 +1285,68 @@ export class SQLiteDatabase implements IDatabase {
     this.db.prepare('DELETE FROM contacts WHERE id = ?').run(contactId);
   }
 
+  // Query Presets
+  async getQueryPreset(presetId: string): Promise<QueryPreset | null> {
+    const row = this.db.prepare('SELECT * FROM query_presets WHERE id = ?').get(presetId) as any;
+    if (!row) return null;
+    return this.mapQueryPreset(row);
+  }
+
+  async getQueryPresetByName(name: string): Promise<QueryPreset | null> {
+    const row = this.db.prepare('SELECT * FROM query_presets WHERE name = ?').get(name) as any;
+    if (!row) return null;
+    return this.mapQueryPreset(row);
+  }
+
+  async getQueryPresets(): Promise<QueryPreset[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM query_presets ORDER BY label ASC'
+    ).all() as any[];
+    return rows.map(row => this.mapQueryPreset(row));
+  }
+
+  async getActiveQueryPresets(): Promise<QueryPreset[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM query_presets WHERE is_active = 1 ORDER BY label ASC'
+    ).all() as any[];
+    return rows.map(row => this.mapQueryPreset(row));
+  }
+
+  async createQueryPreset(preset: Omit<QueryPreset, 'createdAt' | 'updatedAt'>): Promise<QueryPreset> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO query_presets (id, name, label, description, sql, parameters_json, output_schema_json, is_active, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      preset.id, preset.name, preset.label, preset.description,
+      preset.sql, preset.parametersJson, preset.outputSchemaJson,
+      preset.isActive ? 1 : 0, preset.createdBy, now, now
+    );
+    return this.getQueryPreset(preset.id) as Promise<QueryPreset>;
+  }
+
+  async updateQueryPreset(presetId: string, updates: Partial<QueryPreset>): Promise<QueryPreset> {
+    const now = new Date().toISOString();
+    const sets: string[] = ['updated_at = ?'];
+    const values: any[] = [now];
+
+    if (updates.name !== undefined) { sets.push('name = ?'); values.push(updates.name); }
+    if (updates.label !== undefined) { sets.push('label = ?'); values.push(updates.label); }
+    if (updates.description !== undefined) { sets.push('description = ?'); values.push(updates.description); }
+    if (updates.sql !== undefined) { sets.push('sql = ?'); values.push(updates.sql); }
+    if (updates.parametersJson !== undefined) { sets.push('parameters_json = ?'); values.push(updates.parametersJson); }
+    if (updates.outputSchemaJson !== undefined) { sets.push('output_schema_json = ?'); values.push(updates.outputSchemaJson); }
+    if (updates.isActive !== undefined) { sets.push('is_active = ?'); values.push(updates.isActive ? 1 : 0); }
+
+    values.push(presetId);
+    this.db.prepare(`UPDATE query_presets SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    return this.getQueryPreset(presetId) as Promise<QueryPreset>;
+  }
+
+  async deleteQueryPreset(presetId: string): Promise<void> {
+    this.db.prepare('DELETE FROM query_presets WHERE id = ?').run(presetId);
+  }
+
   // Mappers
   private mapUser(row: any): User {
     return {
@@ -1523,6 +1601,22 @@ export class SQLiteDatabase implements IDatabase {
       organization: row.organization || undefined,
       relationship: row.relationship || undefined,
       notes: row.notes || undefined,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
+    };
+  }
+
+  private mapQueryPreset(row: any): QueryPreset {
+    return {
+      id: row.id,
+      name: row.name,
+      label: row.label,
+      description: row.description || '',
+      sql: row.sql,
+      parametersJson: row.parameters_json || '{}',
+      outputSchemaJson: row.output_schema_json || '[]',
+      isActive: row.is_active === 1,
+      createdBy: row.created_by,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };

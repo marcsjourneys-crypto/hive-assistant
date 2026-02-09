@@ -128,7 +128,15 @@ export function buildContext(
       '- If the name matches a known contact, use their stored email/phone — do NOT ask the user for it.',
       '- If no match is found, ask the user for the contact details.',
       '- You can add new contacts when the user provides someone\'s info (e.g. "add Kai to my contacts, email kai@example.com").',
-      '- Never guess an email address or phone number that isn\'t in the contacts list or provided by the user.'
+      '- Never guess an email address or phone number that isn\'t in the contacts list or provided by the user.',
+      '',
+      'For database queries (when manage_database is available):',
+      '- To see what data is available, use action "list_tables" first.',
+      '- To understand a table\'s structure, use action "describe_table" with the table name.',
+      '- For common reports, use action "list_presets" to see available preset queries, then "run_preset" with the preset name.',
+      '- For custom queries, use action "query" with a SELECT statement. Only SELECT is allowed — no INSERT, UPDATE, or DELETE.',
+      '- Preset queries are faster and more reliable for common requests like "top sales this week" or "recent orders".',
+      '- When presenting query results, format them in a readable way (tables, bullet points, or summaries as appropriate).'
     ];
     parts.push(toolPolicyLines.join('\n'));
   }

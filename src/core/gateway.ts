@@ -14,6 +14,7 @@ import { WorkflowTriggerService } from '../services/workflow-trigger';
 import { ScriptRunner } from '../services/script-runner';
 import { GoogleCalendarService } from '../services/google-calendar';
 import { GmailService } from '../services/gmail';
+import { SupabaseService } from '../services/supabase';
 import { getTools, ToolContext } from './tools';
 
 /** Configuration for creating a Gateway instance. */
@@ -31,6 +32,7 @@ export interface GatewayConfig {
   scriptRunner?: ScriptRunner;
   googleCalendar?: GoogleCalendarService;
   gmail?: GmailService;
+  supabase?: SupabaseService;
 }
 
 /** Result returned from handleMessage. */
@@ -66,6 +68,7 @@ export class Gateway {
   private scriptRunner?: ScriptRunner;
   private googleCalendar?: GoogleCalendarService;
   private gmail?: GmailService;
+  private supabase?: SupabaseService;
   private skillsCache: SkillMeta[] | null = null;
 
   constructor(config: GatewayConfig) {
@@ -82,6 +85,7 @@ export class Gateway {
     this.scriptRunner = config.scriptRunner;
     this.googleCalendar = config.googleCalendar;
     this.gmail = config.gmail;
+    this.supabase = config.supabase;
   }
 
   /**
@@ -327,6 +331,10 @@ export class Gateway {
     } else if (cfg.brevo?.apiKey) {
       toolNames.add('send_email');
     }
+    // Include manage_database if Supabase is configured
+    if (this.supabase) {
+      toolNames.add('manage_database');
+    }
     const activeToolNames = [...toolNames];
 
     // 10. Build context (exclude current message from history; buildContext adds it)
@@ -357,7 +365,7 @@ export class Gateway {
 
       // Resolve tool names to definitions.
       // Pass user context so user-scoped tools (e.g. manage_reminders) get bound correctly.
-      const toolContext: ToolContext = { userId, db: this.db, scriptRunner: this.scriptRunner, googleCalendar: this.googleCalendar, gmail: this.gmail };
+      const toolContext: ToolContext = { userId, db: this.db, scriptRunner: this.scriptRunner, googleCalendar: this.googleCalendar, gmail: this.gmail, supabase: this.supabase };
       const resolvedTools = getTools(activeToolNames, toolContext);
       if (resolvedTools.length > 0) {
         executeOptions.tools = resolvedTools;

@@ -9,6 +9,7 @@ import { getUserWorkspacePath } from '../utils/user-workspace';
 import { getTools, ToolContext } from '../core/tools';
 import type { GoogleCalendarService } from './google-calendar';
 import type { GmailService } from './gmail';
+import type { SupabaseService } from './supabase';
 
 /** Input mapping for a workflow step. */
 export interface InputMapping {
@@ -63,7 +64,8 @@ export class WorkflowEngine {
     private credentialVault?: CredentialVault,
     private notificationSender?: NotificationSender,
     private googleCalendar?: GoogleCalendarService,
-    private gmail?: GmailService
+    private gmail?: GmailService,
+    private supabase?: SupabaseService
   ) {}
 
   /**
@@ -354,7 +356,8 @@ export class WorkflowEngine {
       db: this.db,
       scriptRunner: this.scriptRunner,
       googleCalendar: this.googleCalendar,
-      gmail: this.gmail
+      gmail: this.gmail,
+      supabase: this.supabase
     };
 
     // Get the tool from the registry

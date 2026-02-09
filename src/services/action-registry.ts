@@ -442,6 +442,117 @@ const DATA_ACTIONS: ActionDefinition[] = [
   }
 ];
 
+// ─── Database Actions ─────────────────────────────────────────────────────────
+
+const DATABASE_OUTPUT_SCHEMA: OutputFieldSchema[] = [
+  {
+    key: 'rows',
+    label: 'Query Results',
+    type: 'array',
+    description: 'Array of result rows'
+  },
+  { key: 'count', label: 'Row Count', type: 'number' },
+  { key: 'truncated', label: 'Truncated', type: 'boolean' }
+];
+
+const DATABASE_ACTIONS: ActionDefinition[] = [
+  {
+    id: 'data.db_preset',
+    category: 'Database',
+    label: 'Run saved query',
+    description: 'Run a pre-built query preset (no AI tokens used)',
+    icon: '📊',
+    stepType: 'tool',
+    toolName: 'manage_database',
+    presetInputs: {
+      action: 'run_preset'
+    },
+    userInputs: {
+      presetName: {
+        type: 'string',
+        label: 'Preset name',
+        description: 'Name of the query preset to run',
+        placeholder: 'top_sales_this_week',
+        required: true
+      }
+    },
+    outputSchema: DATABASE_OUTPUT_SCHEMA
+  },
+  {
+    id: 'data.db_list_tables',
+    category: 'Database',
+    label: 'List database tables',
+    description: 'Get a list of available tables in the database',
+    icon: '🗄️',
+    stepType: 'tool',
+    toolName: 'manage_database',
+    presetInputs: {
+      action: 'list_tables'
+    },
+    userInputs: {},
+    outputSchema: [
+      { key: 'tables', label: 'Tables', type: 'array' },
+      { key: 'total', label: 'Total Count', type: 'number' }
+    ]
+  },
+  {
+    id: 'data.db_describe',
+    category: 'Database',
+    label: 'Describe table schema',
+    description: 'Get the columns and types for a table',
+    icon: '📋',
+    stepType: 'tool',
+    toolName: 'manage_database',
+    presetInputs: {
+      action: 'describe_table'
+    },
+    userInputs: {
+      table: {
+        type: 'string',
+        label: 'Table name',
+        required: true
+      }
+    },
+    outputSchema: [
+      { key: 'table', label: 'Table Name', type: 'string' },
+      {
+        key: 'columns',
+        label: 'Columns',
+        type: 'array',
+        children: [
+          { key: 'name', label: 'Column Name', type: 'string' },
+          { key: 'type', label: 'Data Type', type: 'string' },
+          { key: 'nullable', label: 'Nullable', type: 'boolean' },
+          { key: 'isPrimaryKey', label: 'Primary Key', type: 'boolean' }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'data.db_query',
+    category: 'Database',
+    label: 'Custom SQL query',
+    description: 'Execute a custom SELECT query (admin only)',
+    icon: '🔍',
+    stepType: 'tool',
+    toolName: 'manage_database',
+    presetInputs: {
+      action: 'query'
+    },
+    userInputs: {
+      sql: {
+        type: 'string',
+        label: 'SQL query',
+        description: 'SELECT query to execute (read-only)',
+        placeholder: 'SELECT * FROM orders LIMIT 10',
+        required: true
+      }
+    },
+    outputSchema: DATABASE_OUTPUT_SCHEMA,
+    adminOnly: true
+  }
+];
+
 // ─── AI Actions ──────────────────────────────────────────────────────────────
 
 const AI_ACTIONS: ActionDefinition[] = [
@@ -517,6 +628,7 @@ export const ACTION_REGISTRY: ActionDefinition[] = [
   ...CALENDAR_ACTIONS,
   ...NOTIFY_ACTIONS,
   ...DATA_ACTIONS,
+  ...DATABASE_ACTIONS,
   ...AI_ACTIONS,
   ...ADMIN_ACTIONS
 ];

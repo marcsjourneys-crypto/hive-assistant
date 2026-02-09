@@ -1,4 +1,4 @@
-import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog, Script, Workflow, WorkflowRun, Schedule, UserCredential, ChannelIdentity, Reminder, FileMetadata, WorkflowTemplate, Contact } from './interface';
+import { Database as IDatabase, User, Conversation, Message, Skill, UsageLog, UserAuth, UserSoul, UserProfile, DebugLog, Script, Workflow, WorkflowRun, Schedule, UserCredential, ChannelIdentity, Reminder, FileMetadata, WorkflowTemplate, Contact, QueryPreset } from './interface';
 
 /**
  * JSON file database implementation - placeholder.
@@ -99,4 +99,11 @@ export class JSONDatabase implements IDatabase {
   async createContact(_contact: Omit<Contact, 'createdAt' | 'updatedAt'>): Promise<Contact> { throw new Error('Not implemented'); }
   async updateContact(_contactId: string, _updates: Partial<Pick<Contact, 'name' | 'nickname' | 'email' | 'phone' | 'organization' | 'relationship' | 'notes'>>): Promise<Contact> { throw new Error('Not implemented'); }
   async deleteContact(_contactId: string): Promise<void> { throw new Error('Not implemented'); }
+  async getQueryPreset(_presetId: string): Promise<QueryPreset | null> { throw new Error('Not implemented'); }
+  async getQueryPresetByName(_name: string): Promise<QueryPreset | null> { throw new Error('Not implemented'); }
+  async getQueryPresets(): Promise<QueryPreset[]> { throw new Error('Not implemented'); }
+  async getActiveQueryPresets(): Promise<QueryPreset[]> { throw new Error('Not implemented'); }
+  async createQueryPreset(_preset: Omit<QueryPreset, 'createdAt' | 'updatedAt'>): Promise<QueryPreset> { throw new Error('Not implemented'); }
+  async updateQueryPreset(_presetId: string, _updates: Partial<QueryPreset>): Promise<QueryPreset> { throw new Error('Not implemented'); }
+  async deleteQueryPreset(_presetId: string): Promise<void> { throw new Error('Not implemented'); }
 }

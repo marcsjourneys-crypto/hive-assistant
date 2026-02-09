@@ -3,6 +3,8 @@ import { Database as IDatabase } from '../../db/interface';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { getConfig, saveConfig } from '../../utils/config';
 import { testOllamaConnection } from '../../core/orchestrator';
+import { QueryPresetsService } from '../../services/query-presets';
+import { createSupabaseService, SupabaseService } from '../../services/supabase';
 
 export function createAdminRoutes(db: IDatabase): Router {
   const router = Router();
@@ -158,6 +160,13 @@ export function createAdminRoutes(db: IDatabase): Router {
         google: {
           hasClientId: !!config.google?.clientId,
           hasClientSecret: !!config.google?.clientSecret
+        },
+        supabase: {
+          hasUrl: !!config.supabase?.url,
+          hasAnonKey: !!config.supabase?.anonKey,
+          enabledTables: config.supabase?.enabledTables || [],
+          maxRowsPerQuery: config.supabase?.maxRowsPerQuery || 1000,
+          queryTimeoutMs: config.supabase?.queryTimeoutMs || 30000
         }
       });
     } catch (error: any) {
@@ -280,6 +289,95 @@ export function createAdminRoutes(db: IDatabase): Router {
   });
 
   /**
+   * PUT /api/admin/system/supabase
+   * Update Supabase database connection settings.
+   */
+  router.put('/system/supabase', async (req: Request, res: Response) => {
+    try {
+      const config = getConfig();
+      const { url, anonKey, enabledTables, maxRowsPerQuery, queryTimeoutMs } = req.body;
+
+      if (!config.supabase) {
+        config.supabase = {
+          url: '',
+          anonKey: '',
+          enabledTables: [],
+          maxRowsPerQuery: 1000,
+          queryTimeoutMs: 30000
+        };
+      }
+
+      if (url !== undefined) config.supabase.url = url;
+      if (anonKey !== undefined) config.supabase.anonKey = anonKey;
+      if (enabledTables !== undefined) config.supabase.enabledTables = enabledTables;
+      if (maxRowsPerQuery !== undefined) config.supabase.maxRowsPerQuery = maxRowsPerQuery;
+      if (queryTimeoutMs !== undefined) config.supabase.queryTimeoutMs = queryTimeoutMs;
+
+      // Test connection if URL and key are provided
+      if (config.supabase.url && config.supabase.anonKey) {
+        try {
+          const testService = createSupabaseService({
+            url: config.supabase.url,
+            anonKey: config.supabase.anonKey,
+            maxRowsPerQuery: config.supabase.maxRowsPerQuery || 1000,
+            queryTimeoutMs: config.supabase.queryTimeoutMs || 30000
+          });
+          const connected = await testService.testConnection();
+          if (!connected) {
+            res.status(400).json({ error: 'Failed to connect to Supabase. Check your URL and anon key.' });
+            return;
+          }
+        } catch (err: any) {
+          res.status(400).json({ error: `Connection test failed: ${err.message}` });
+          return;
+        }
+      }
+
+      saveConfig(config);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('[Admin] Update Supabase error:', error.message);
+      res.status(500).json({ error: 'Failed to update Supabase config' });
+    }
+  });
+
+  /**
+   * POST /api/admin/supabase/test
+   * Test Supabase connection and list available tables.
+   */
+  router.post('/supabase/test', async (req: Request, res: Response) => {
+    try {
+      const config = getConfig();
+      if (!config.supabase?.url || !config.supabase?.anonKey) {
+        res.status(400).json({ ok: false, error: 'Supabase is not configured' });
+        return;
+      }
+
+      const service = createSupabaseService({
+        url: config.supabase.url,
+        anonKey: config.supabase.anonKey,
+        enabledTables: config.supabase.enabledTables,
+        maxRowsPerQuery: config.supabase.maxRowsPerQuery || 1000,
+        queryTimeoutMs: config.supabase.queryTimeoutMs || 30000
+      });
+
+      const startTime = Date.now();
+      const tables = await service.listTables();
+      const durationMs = Date.now() - startTime;
+
+      res.json({
+        ok: true,
+        tables,
+        tableCount: tables.length,
+        durationMs
+      });
+    } catch (error: any) {
+      console.error('[Admin] Supabase test error:', error.message);
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
+  /**
    * POST /api/admin/ollama/test
    * Test Ollama connectivity and model availability.
    */
@@ -291,6 +389,165 @@ export function createAdminRoutes(db: IDatabase): Router {
     } catch (error: any) {
       console.error('[Admin] Ollama test error:', error.message);
       res.status(500).json({ ok: false, message: error.message, durationMs: 0 });
+    }
+  });
+
+  // ─── Query Presets CRUD ────────────────────────────────────────────────────
+
+  const presetsService = new QueryPresetsService(db);
+
+  /**
+   * GET /api/admin/presets
+   * List all query presets.
+   */
+  router.get('/presets', async (_req: Request, res: Response) => {
+    try {
+      const presets = await presetsService.getAll();
+      res.json(presets.map(p => ({
+        id: p.id,
+        name: p.name,
+        label: p.label,
+        description: p.description,
+        sql: p.sql,
+        parameters: JSON.parse(p.parametersJson || '{}'),
+        outputSchema: JSON.parse(p.outputSchemaJson || '[]'),
+        isActive: p.isActive,
+        createdBy: p.createdBy,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt
+      })));
+    } catch (error: any) {
+      console.error('[Admin] List presets error:', error.message);
+      res.status(500).json({ error: 'Failed to list presets' });
+    }
+  });
+
+  /**
+   * GET /api/admin/presets/:id
+   * Get a single query preset.
+   */
+  router.get('/presets/:id', async (req: Request, res: Response) => {
+    try {
+      const preset = await presetsService.getById(req.params.id);
+      if (!preset) {
+        res.status(404).json({ error: 'Preset not found' });
+        return;
+      }
+      res.json({
+        id: preset.id,
+        name: preset.name,
+        label: preset.label,
+        description: preset.description,
+        sql: preset.sql,
+        parameters: JSON.parse(preset.parametersJson || '{}'),
+        outputSchema: JSON.parse(preset.outputSchemaJson || '[]'),
+        isActive: preset.isActive,
+        createdBy: preset.createdBy,
+        createdAt: preset.createdAt,
+        updatedAt: preset.updatedAt
+      });
+    } catch (error: any) {
+      console.error('[Admin] Get preset error:', error.message);
+      res.status(500).json({ error: 'Failed to get preset' });
+    }
+  });
+
+  /**
+   * POST /api/admin/presets
+   * Create a new query preset.
+   */
+  router.post('/presets', async (req: Request, res: Response) => {
+    try {
+      const { name, label, description, sql, parameters, outputSchema } = req.body;
+
+      if (!name || !label || !sql) {
+        res.status(400).json({ error: 'name, label, and sql are required' });
+        return;
+      }
+
+      const preset = await presetsService.create({
+        name,
+        label,
+        description,
+        sql,
+        parameters,
+        outputSchema,
+        createdBy: req.user!.userId
+      });
+
+      res.status(201).json({
+        id: preset.id,
+        name: preset.name,
+        label: preset.label,
+        description: preset.description,
+        sql: preset.sql,
+        parameters: JSON.parse(preset.parametersJson || '{}'),
+        isActive: preset.isActive
+      });
+    } catch (error: any) {
+      console.error('[Admin] Create preset error:', error.message);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  /**
+   * PUT /api/admin/presets/:id
+   * Update a query preset.
+   */
+  router.put('/presets/:id', async (req: Request, res: Response) => {
+    try {
+      const { name, label, description, sql, parameters, outputSchema, isActive } = req.body;
+
+      const preset = await presetsService.update(req.params.id, {
+        name,
+        label,
+        description,
+        sql,
+        parameters,
+        outputSchema,
+        isActive
+      });
+
+      res.json({
+        id: preset.id,
+        name: preset.name,
+        label: preset.label,
+        description: preset.description,
+        sql: preset.sql,
+        parameters: JSON.parse(preset.parametersJson || '{}'),
+        isActive: preset.isActive
+      });
+    } catch (error: any) {
+      console.error('[Admin] Update preset error:', error.message);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  /**
+   * DELETE /api/admin/presets/:id
+   * Delete a query preset.
+   */
+  router.delete('/presets/:id', async (req: Request, res: Response) => {
+    try {
+      await presetsService.delete(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('[Admin] Delete preset error:', error.message);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  /**
+   * POST /api/admin/presets/:id/toggle
+   * Toggle a preset's active status.
+   */
+  router.post('/presets/:id/toggle', async (req: Request, res: Response) => {
+    try {
+      const preset = await presetsService.toggleActive(req.params.id);
+      res.json({ id: preset.id, isActive: preset.isActive });
+    } catch (error: any) {
+      console.error('[Admin] Toggle preset error:', error.message);
+      res.status(400).json({ error: error.message });
     }
   });
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { integrations } from '../api';
+import { integrations, admin } from '../api';
 
 export default function IntegrationsPage() {
   const [googleConnected, setGoogleConnected] = useState(false);
@@ -7,6 +7,19 @@ export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Supabase state
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [supabaseConfig, setSupabaseConfig] = useState({
+    hasUrl: false,
+    hasAnonKey: false,
+    maxRowsPerQuery: 1000,
+    queryTimeoutMs: 30000
+  });
+  const [supabaseForm, setSupabaseForm] = useState({ url: '', anonKey: '' });
+  const [supabaseTesting, setSupabaseTesting] = useState(false);
+  const [supabaseSaving, setSupabaseSaving] = useState(false);
+  const [supabaseTestResult, setSupabaseTestResult] = useState<{ ok: boolean; tables?: string[]; error?: string } | null>(null);
 
   useEffect(() => {
     loadStatus();
@@ -27,9 +40,25 @@ export default function IntegrationsPage() {
       }
     } catch {
       // Google may not be configured — show as disconnected
-    } finally {
-      setLoading(false);
     }
+
+    // Load Supabase config for admins
+    try {
+      const systemConfig = await admin.getSystem();
+      setIsAdmin(true);
+      if (systemConfig.supabase) {
+        setSupabaseConfig({
+          hasUrl: systemConfig.supabase.hasUrl || false,
+          hasAnonKey: systemConfig.supabase.hasAnonKey || false,
+          maxRowsPerQuery: systemConfig.supabase.maxRowsPerQuery || 1000,
+          queryTimeoutMs: systemConfig.supabase.queryTimeoutMs || 30000
+        });
+      }
+    } catch {
+      setIsAdmin(false);
+    }
+
+    setLoading(false);
   }
 
   function checkUrlParams() {
@@ -188,6 +217,141 @@ export default function IntegrationsPage() {
             </div>
           )}
         </div>
+
+        {/* Supabase Database (Admin only) */}
+        {isAdmin && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 mb-1">
+                  <h3 className="text-lg font-semibold">Supabase Database</h3>
+                  <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                    supabaseConfig.hasUrl && supabaseConfig.hasAnonKey
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {supabaseConfig.hasUrl && supabaseConfig.hasAnonKey ? 'Configured' : 'Not configured'}
+                  </span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
+                    Admin
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500">
+                  Connect a Supabase database for data queries in workflows and chat.
+                  Users can run preset queries or ask natural language questions about your data.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Supabase URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://xxx.supabase.co"
+                  value={supabaseForm.url}
+                  onChange={(e) => setSupabaseForm(prev => ({ ...prev, url: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-hive-500 focus:border-hive-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Anon Key (public read-only)
+                </label>
+                <input
+                  type="password"
+                  placeholder="eyJ..."
+                  value={supabaseForm.anonKey}
+                  onChange={(e) => setSupabaseForm(prev => ({ ...prev, anonKey: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-hive-500 focus:border-hive-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Use your Supabase anon key for read-only access. Never use the service role key here.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={async () => {
+                    setSupabaseSaving(true);
+                    setSupabaseTestResult(null);
+                    try {
+                      await admin.updateSupabase({
+                        url: supabaseForm.url || undefined,
+                        anonKey: supabaseForm.anonKey || undefined
+                      });
+                      setMessage({ type: 'success', text: 'Supabase configuration saved!' });
+                      setSupabaseConfig(prev => ({
+                        ...prev,
+                        hasUrl: !!supabaseForm.url || prev.hasUrl,
+                        hasAnonKey: !!supabaseForm.anonKey || prev.hasAnonKey
+                      }));
+                      setSupabaseForm({ url: '', anonKey: '' });
+                    } catch (err: any) {
+                      setMessage({ type: 'error', text: err.message || 'Failed to save Supabase config' });
+                    } finally {
+                      setSupabaseSaving(false);
+                    }
+                  }}
+                  disabled={supabaseSaving || (!supabaseForm.url && !supabaseForm.anonKey)}
+                  className="px-4 py-2 text-sm text-white bg-hive-500 rounded-lg hover:bg-hive-600 disabled:opacity-50"
+                >
+                  {supabaseSaving ? 'Saving...' : 'Save'}
+                </button>
+
+                <button
+                  onClick={async () => {
+                    setSupabaseTesting(true);
+                    setSupabaseTestResult(null);
+                    try {
+                      const result = await admin.testSupabase();
+                      setSupabaseTestResult(result);
+                    } catch (err: any) {
+                      setSupabaseTestResult({ ok: false, error: err.message });
+                    } finally {
+                      setSupabaseTesting(false);
+                    }
+                  }}
+                  disabled={supabaseTesting || !(supabaseConfig.hasUrl && supabaseConfig.hasAnonKey)}
+                  className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {supabaseTesting ? 'Testing...' : 'Test Connection'}
+                </button>
+              </div>
+
+              {supabaseTestResult && (
+                <div className={`p-3 rounded-lg text-sm ${
+                  supabaseTestResult.ok
+                    ? 'bg-green-50 text-green-800 border border-green-200'
+                    : 'bg-red-50 text-red-800 border border-red-200'
+                }`}>
+                  {supabaseTestResult.ok ? (
+                    <>
+                      <p className="font-medium">Connection successful!</p>
+                      <p className="text-xs mt-1">
+                        Found {supabaseTestResult.tables?.length || 0} tables: {supabaseTestResult.tables?.slice(0, 5).join(', ')}
+                        {(supabaseTestResult.tables?.length || 0) > 5 && '...'}
+                      </p>
+                    </>
+                  ) : (
+                    <p>{supabaseTestResult.error}</p>
+                  )}
+                </div>
+              )}
+
+              {supabaseConfig.hasUrl && supabaseConfig.hasAnonKey && (
+                <p className="text-xs text-gray-400">
+                  Your assistant can use the{' '}
+                  <code className="bg-gray-100 px-1 rounded">manage_database</code>{' '}
+                  tool to query your Supabase data. Create query presets in the admin panel for common reports.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Placeholder for future integrations */}
         <div className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-6 text-center">

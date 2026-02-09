@@ -222,6 +222,20 @@ export interface DebugLog {
   createdAt: Date;
 }
 
+export interface QueryPreset {
+  id: string;
+  name: string;
+  label: string;
+  description: string;
+  sql: string;
+  parametersJson: string;
+  outputSchemaJson: string;
+  isActive: boolean;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface Database {
   // Initialization
   initialize(): Promise<void>;
@@ -357,6 +371,15 @@ export interface Database {
   findOwnerByChannelUserId(channelUserId: string, channel: string): Promise<string | null>;
   createChannelIdentity(identity: Omit<ChannelIdentity, 'createdAt' | 'updatedAt'>): Promise<ChannelIdentity>;
   deleteChannelIdentity(id: string): Promise<void>;
+
+  // Query Presets (for Supabase connector)
+  getQueryPreset(presetId: string): Promise<QueryPreset | null>;
+  getQueryPresetByName(name: string): Promise<QueryPreset | null>;
+  getQueryPresets(): Promise<QueryPreset[]>;
+  getActiveQueryPresets(): Promise<QueryPreset[]>;
+  createQueryPreset(preset: Omit<QueryPreset, 'createdAt' | 'updatedAt'>): Promise<QueryPreset>;
+  updateQueryPreset(presetId: string, updates: Partial<QueryPreset>): Promise<QueryPreset>;
+  deleteQueryPreset(presetId: string): Promise<void>;
 }
 
 /**

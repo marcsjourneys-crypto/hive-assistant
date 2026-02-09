@@ -6,6 +6,7 @@ import type { Database } from '../db/interface';
 import type { ScriptRunner } from '../services/script-runner';
 import type { GoogleCalendarService } from '../services/google-calendar';
 import type { GmailService } from '../services/gmail';
+import type { SupabaseService } from '../services/supabase';
 import { getConfig } from '../utils/config';
 
 const dnsLookup = promisify(dns.lookup);
@@ -1214,6 +1215,153 @@ function createContactsTool(userId: string, db: Database): ToolDefinition {
   };
 }
 
+// ─── Tool: manage_database (system-scoped factory) ───────────────────────────
+
+/** Metadata for the manage_database tool. */
+const MANAGE_DATABASE_META = {
+  name: 'manage_database',
+  description: 'Query a connected Supabase database. Supports listing tables, describing table schemas, executing read-only SQL queries, and running pre-built query presets. All queries are SELECT-only for safety.'
+};
+
+/** Schema for the manage_database tool. */
+const MANAGE_DATABASE_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['list_tables', 'describe_table', 'query', 'run_preset', 'list_presets'],
+      description: 'The action to perform: list available tables, describe a table schema, execute a SELECT query, run a saved preset query, or list available presets.'
+    },
+    table: {
+      type: 'string',
+      description: 'Table name (required for "describe_table" action).'
+    },
+    sql: {
+      type: 'string',
+      description: 'SQL SELECT query to execute (required for "query" action). Only SELECT statements are allowed.'
+    },
+    presetName: {
+      type: 'string',
+      description: 'Name of the query preset to run (required for "run_preset" action).'
+    },
+    parameters: {
+      type: 'object',
+      description: 'Parameters to pass to the preset query (optional for "run_preset" action).'
+    }
+  },
+  required: ['action']
+};
+
+/** Create a manage_database tool instance. */
+function createDatabaseTool(db: Database, supabase: SupabaseService): ToolDefinition {
+  return {
+    name: MANAGE_DATABASE_META.name,
+    description: MANAGE_DATABASE_META.description,
+    input_schema: MANAGE_DATABASE_SCHEMA,
+    handler: async (input: {
+      action: 'list_tables' | 'describe_table' | 'query' | 'run_preset' | 'list_presets';
+      table?: string;
+      sql?: string;
+      presetName?: string;
+      parameters?: Record<string, unknown>;
+    }) => {
+      try {
+        switch (input.action) {
+          case 'list_tables': {
+            const tables = await supabase.listTables();
+            return { tables, total: tables.length };
+          }
+
+          case 'describe_table': {
+            if (!input.table) {
+              return { error: 'table is required for "describe_table" action.' };
+            }
+            const columns = await supabase.describeTable(input.table);
+            return {
+              table: input.table,
+              columns,
+              total: columns.length
+            };
+          }
+
+          case 'query': {
+            if (!input.sql) {
+              return { error: 'sql is required for "query" action.' };
+            }
+            const result = await supabase.query(input.sql);
+            return {
+              rows: result.rows,
+              count: result.count,
+              truncated: result.truncated
+            };
+          }
+
+          case 'run_preset': {
+            if (!input.presetName) {
+              return { error: 'presetName is required for "run_preset" action.' };
+            }
+
+            // Look up preset by name
+            const preset = await db.getQueryPresetByName(input.presetName);
+            if (!preset) {
+              const available = await db.getActiveQueryPresets();
+              return {
+                error: `Preset "${input.presetName}" not found.`,
+                available_presets: available.map(p => ({ name: p.name, label: p.label, description: p.description }))
+              };
+            }
+
+            if (!preset.isActive) {
+              return { error: `Preset "${input.presetName}" is not active.` };
+            }
+
+            // Substitute parameters into SQL if provided
+            let sql = preset.sql;
+            if (input.parameters) {
+              // Parse the preset's parameter schema
+              const paramSchema = JSON.parse(preset.parametersJson || '{}');
+              for (const [key, value] of Object.entries(input.parameters)) {
+                // Simple parameter substitution: replace {{key}} with value
+                const placeholder = `{{${key}}}`;
+                const strValue = typeof value === 'string' ? value : JSON.stringify(value);
+                sql = sql.replace(new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'), strValue);
+              }
+            }
+
+            const result = await supabase.query(sql);
+            return {
+              preset: preset.name,
+              label: preset.label,
+              rows: result.rows,
+              count: result.count,
+              truncated: result.truncated
+            };
+          }
+
+          case 'list_presets': {
+            const presets = await db.getActiveQueryPresets();
+            return {
+              presets: presets.map(p => ({
+                name: p.name,
+                label: p.label,
+                description: p.description,
+                parameters: JSON.parse(p.parametersJson || '{}')
+              })),
+              total: presets.length
+            };
+          }
+
+          default:
+            return { error: `Unknown action: ${input.action}. Use list_tables, describe_table, query, run_preset, or list_presets.` };
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { error: `Database error: ${message}` };
+      }
+    }
+  };
+}
+
 // ─── Tool Registry ───────────────────────────────────────────────────────────
 
 /** Static tools that don't need user context. */
@@ -1223,7 +1371,7 @@ const STATIC_TOOL_REGISTRY: Record<string, ToolDefinition> = {
 };
 
 /** Names of tools that require user context (created via factory). */
-const USER_SCOPED_TOOLS = new Set(['manage_reminders', 'run_script', 'send_email', 'manage_calendar', 'manage_email', 'manage_contacts']);
+const USER_SCOPED_TOOLS = new Set(['manage_reminders', 'run_script', 'send_email', 'manage_calendar', 'manage_email', 'manage_contacts', 'manage_database']);
 
 /** Context needed to create user-scoped tool instances. */
 export interface ToolContext {
@@ -1232,6 +1380,7 @@ export interface ToolContext {
   scriptRunner?: ScriptRunner;
   googleCalendar?: GoogleCalendarService;
   gmail?: GmailService;
+  supabase?: SupabaseService;
 }
 
 /**
@@ -1265,6 +1414,8 @@ export function getTools(names: string[], context?: ToolContext): ToolDefinition
         tools.push(createEmailTool(context.userId, context.gmail));
       } else if (name === 'manage_contacts') {
         tools.push(createContactsTool(context.userId, context.db));
+      } else if (name === 'manage_database' && context.supabase) {
+        tools.push(createDatabaseTool(context.db, context.supabase));
       }
     }
   }
@@ -1288,7 +1439,8 @@ const TOOL_CATEGORIES: Record<string, string> = {
   send_email: 'Communication',
   manage_calendar: 'Productivity',
   manage_email: 'Communication',
-  manage_contacts: 'Productivity'
+  manage_contacts: 'Productivity',
+  manage_database: 'Data'
 };
 
 /**
@@ -1301,7 +1453,7 @@ export function getToolsMeta(): Array<{ name: string; description: string; categ
     description: t.description,
     category: TOOL_CATEGORIES[t.name] || 'Other'
   }));
-  const userScopedMeta = [MANAGE_REMINDERS_META, RUN_SCRIPT_META, SEND_EMAIL_META, MANAGE_CALENDAR_META, MANAGE_EMAIL_META, MANAGE_CONTACTS_META].map(m => ({
+  const userScopedMeta = [MANAGE_REMINDERS_META, RUN_SCRIPT_META, SEND_EMAIL_META, MANAGE_CALENDAR_META, MANAGE_EMAIL_META, MANAGE_CONTACTS_META, MANAGE_DATABASE_META].map(m => ({
     ...m,
     category: TOOL_CATEGORIES[m.name] || 'Other'
   }));

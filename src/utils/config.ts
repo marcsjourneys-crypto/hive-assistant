@@ -67,6 +67,13 @@ export interface Config {
     clientId: string;
     clientSecret: string;
   };
+  supabase?: {
+    url: string;
+    anonKey: string;
+    enabledTables?: string[];
+    maxRowsPerQuery?: number;
+    queryTimeoutMs?: number;
+  };
 }
 
 const HIVE_DIR = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.hive');

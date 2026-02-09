@@ -283,6 +283,7 @@ export interface SystemConfig {
   debug: { enabled: boolean; retentionDays: number };
   brevo: { hasApiKey: boolean; defaultSenderName: string; defaultSenderEmail: string };
   google: { hasClientId: boolean; hasClientSecret: boolean };
+  supabase?: { hasUrl: boolean; hasAnonKey: boolean; maxRowsPerQuery: number; queryTimeoutMs: number };
 }
 
 export const admin = {
@@ -311,6 +312,16 @@ export const admin = {
       method: 'POST',
       body: JSON.stringify({ endpoint, model }),
     }),
+  updateSupabase: (config: { url?: string; anonKey?: string }) =>
+    request<{ success: boolean }>('/admin/system/supabase', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    }),
+  testSupabase: () =>
+    request<{ ok: boolean; tables?: string[]; error?: string }>('/admin/supabase/test', {
+      method: 'POST',
+    }),
+  getSystem: () => request<SystemConfig>('/admin/system'),
 };
 
 // Chat
