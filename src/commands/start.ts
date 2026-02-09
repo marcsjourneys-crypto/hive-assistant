@@ -158,7 +158,10 @@ export async function startCommand(options: StartOptions): Promise<void> {
     const notificationSender = new NotificationSender(telegramToken);
 
     // 8c. Create workflow engine (requires gateway for skill steps, vault for credential inputs)
-    const workflowEngine = new WorkflowEngine(scriptRunner, gateway, db, credentialVault, notificationSender);
+    const workflowEngine = new WorkflowEngine(
+      scriptRunner, gateway, db, credentialVault, notificationSender,
+      googleCalendar, gmail
+    );
 
     // 8d. Create workflow trigger service (natural language workflow triggering)
     const workflowTrigger = new WorkflowTriggerService(db, workflowEngine);

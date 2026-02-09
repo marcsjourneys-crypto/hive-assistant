@@ -10,13 +10,14 @@ interface InputMapping {
 
 interface StepDef {
   id: string;
-  type: 'script' | 'skill' | 'notify';
+  type: 'script' | 'skill' | 'notify' | 'tool';
   scriptId?: string;
   skillName?: string;
+  toolName?: string; // for direct tool invocation
   channel?: string;
   label?: string;
   inputs: Record<string, InputMapping>;
-  tools?: string[];
+  tools?: string[]; // for skill steps
 }
 
 interface WorkflowForm {
@@ -162,11 +163,16 @@ export default function WorkflowsPage() {
     setRunResult(null);
   };
 
-  const addStep = (type: 'script' | 'skill' | 'notify') => {
+  const addStep = (type: 'script' | 'skill' | 'notify' | 'tool') => {
     const step: StepDef = { id: newStepId(), type, inputs: {} };
     if (type === 'notify') {
       step.channel = 'telegram';
       step.inputs = { message: { type: 'static', value: '' } };
+    }
+    if (type === 'tool') {
+      // Default to manage_email with list_emails action
+      step.toolName = 'manage_email';
+      step.inputs = { action: { type: 'static', value: 'list_emails' } };
     }
     setForm(f => ({
       ...f,
@@ -417,6 +423,7 @@ export default function WorkflowsPage() {
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
                           step.type === 'script' ? 'bg-blue-100 text-blue-700' :
                           step.type === 'notify' ? 'bg-green-100 text-green-700' :
+                          step.type === 'tool' ? 'bg-amber-100 text-amber-700' :
                           'bg-purple-100 text-purple-700'
                         }`}>
                           {step.type}
@@ -553,6 +560,71 @@ export default function WorkflowsPage() {
                         </div>
                       </div>
                     )}
+                    {step.type === 'tool' && (
+                      <div className="mb-3 space-y-3">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Tool</label>
+                          <select
+                            value={step.toolName || ''}
+                            onChange={e => {
+                              const toolName = e.target.value;
+                              // Reset inputs when tool changes, set appropriate defaults
+                              let defaultInputs: Record<string, InputMapping> = {};
+                              if (toolName === 'manage_email') {
+                                defaultInputs = { action: { type: 'static', value: 'list_emails' } };
+                              } else if (toolName === 'manage_calendar') {
+                                defaultInputs = { action: { type: 'static', value: 'list_events' } };
+                              }
+                              updateStep(idx, { toolName, inputs: defaultInputs });
+                            }}
+                            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-hive-500"
+                          >
+                            <option value="">Select a tool...</option>
+                            {toolList.map(t => (
+                              <option key={t.name} value={t.name}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        {step.toolName && (
+                          <p className="text-xs text-gray-400">
+                            {toolList.find(t => t.name === step.toolName)?.description || ''}
+                          </p>
+                        )}
+                        {step.toolName === 'manage_email' && (
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Action</label>
+                            <select
+                              value={(step.inputs.action as InputMapping)?.value || 'list_emails'}
+                              onChange={e => updateInput(idx, 'action', { type: 'static', value: e.target.value })}
+                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-hive-500"
+                            >
+                              <option value="list_emails">List emails</option>
+                              <option value="read_email">Read email</option>
+                              <option value="search_emails">Search emails</option>
+                              <option value="send_email">Send email</option>
+                              <option value="reply_email">Reply to email</option>
+                              <option value="list_labels">List labels</option>
+                            </select>
+                          </div>
+                        )}
+                        {step.toolName === 'manage_calendar' && (
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Action</label>
+                            <select
+                              value={(step.inputs.action as InputMapping)?.value || 'list_events'}
+                              onChange={e => updateInput(idx, 'action', { type: 'static', value: e.target.value })}
+                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-hive-500"
+                            >
+                              <option value="list_calendars">List calendars</option>
+                              <option value="list_events">List events</option>
+                              <option value="create_event">Create event</option>
+                              <option value="delete_event">Delete event</option>
+                              <option value="find_events">Find events</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Inputs */}
                     <div>
@@ -641,6 +713,12 @@ export default function WorkflowsPage() {
                   className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors"
                 >
                   + Skill Step
+                </button>
+                <button
+                  onClick={() => addStep('tool')}
+                  className="px-3 py-1.5 border border-amber-300 rounded-lg text-xs text-amber-700 hover:bg-amber-50 transition-colors"
+                >
+                  + Tool Step
                 </button>
                 <button
                   onClick={() => addStep('notify')}

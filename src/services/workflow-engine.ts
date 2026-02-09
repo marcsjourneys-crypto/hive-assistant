@@ -6,6 +6,9 @@ import { CredentialVault } from './credential-vault';
 import { NotificationSender } from './notification-sender';
 import { Gateway } from '../core/gateway';
 import { getUserWorkspacePath } from '../utils/user-workspace';
+import { getTools, ToolContext } from '../core/tools';
+import type { GoogleCalendarService } from './google-calendar';
+import type { GmailService } from './gmail';
 
 /** Input mapping for a workflow step. */
 export interface InputMapping {
@@ -18,9 +21,10 @@ export interface InputMapping {
 /** A single step in a workflow definition. */
 export interface StepDefinition {
   id: string;
-  type: 'script' | 'skill' | 'notify';
+  type: 'script' | 'skill' | 'notify' | 'tool';
   scriptId?: string;
   skillName?: string;
+  toolName?: string; // for tool steps: 'manage_email', 'manage_calendar', etc.
   channel?: string; // for notify steps: 'telegram'
   label?: string;
   inputs: Record<string, InputMapping>;
@@ -57,7 +61,9 @@ export class WorkflowEngine {
     private gateway: Gateway | undefined,
     private db: Database,
     private credentialVault?: CredentialVault,
-    private notificationSender?: NotificationSender
+    private notificationSender?: NotificationSender,
+    private googleCalendar?: GoogleCalendarService,
+    private gmail?: GmailService
   ) {}
 
   /**
@@ -106,6 +112,8 @@ export class WorkflowEngine {
           output = await this.executeSkillStep(step, resolvedInputs, userId);
         } else if (step.type === 'notify') {
           output = await this.executeNotifyStep(step, resolvedInputs, userId, stepOutputs);
+        } else if (step.type === 'tool') {
+          output = await this.executeToolStep(step, resolvedInputs, userId);
         } else {
           throw new Error(`Unknown step type: ${(step as any).type}`);
         }
@@ -324,6 +332,46 @@ export class WorkflowEngine {
     );
 
     return { response: result.response };
+  }
+
+  /**
+   * Execute a tool step by directly invoking a registered tool.
+   * This bypasses Claude entirely — cheaper and more deterministic for
+   * structured operations like listing emails or calendar events.
+   */
+  private async executeToolStep(
+    step: StepDefinition,
+    inputs: Record<string, unknown>,
+    userId: string
+  ): Promise<unknown> {
+    if (!step.toolName) {
+      throw new Error(`Tool step "${step.id}" is missing toolName`);
+    }
+
+    // Build tool context with all available services
+    const toolContext: ToolContext = {
+      userId,
+      db: this.db,
+      scriptRunner: this.scriptRunner,
+      googleCalendar: this.googleCalendar,
+      gmail: this.gmail
+    };
+
+    // Get the tool from the registry
+    const tools = getTools([step.toolName], toolContext);
+    if (tools.length === 0) {
+      throw new Error(`Tool "${step.toolName}" not found or not available`);
+    }
+
+    const tool = tools[0];
+
+    // Execute the tool handler with the resolved inputs
+    try {
+      const result = await tool.handler(inputs);
+      return result;
+    } catch (err: any) {
+      throw new Error(`Tool "${step.toolName}" failed: ${err.message}`);
+    }
   }
 
   /**
