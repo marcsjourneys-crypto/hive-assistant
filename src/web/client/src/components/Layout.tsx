@@ -89,7 +89,7 @@ export function Layout() {
       {/* Sidebar */}
       <aside className="w-64 bg-gray-900 text-white flex flex-col">
         <div className="p-4 border-b border-gray-700">
-          <img src="/hive.png" alt="Hive" className="h-8 mb-2" />
+          <img src="/hive.png" alt="Hive" className="h-12 mb-2" />
           <p className="text-sm text-gray-400">{user?.email}</p>
         </div>
 
