@@ -1,34 +1,79 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth-context';
 
-const navItems = [
+// Main items (no section header)
+const mainItems = [
   { to: '/', label: 'Dashboard', icon: '📊' },
   { to: '/chat', label: 'Chat', icon: '💬' },
+];
+
+// Section: My Assistant
+const assistantItems = [
   { to: '/settings/soul', label: 'Personality', icon: '🎭' },
+  { to: '/settings/skills', label: 'Skills', icon: '⚡' },
+];
+
+// Section: My Profile
+const profileItems = [
   { to: '/settings/profile', label: 'Profile', icon: '👤' },
-  { to: '/settings/channels', label: 'Channels', icon: '📱' },
-  { to: '/settings/identities', label: 'Identities', icon: '🔗' },
+  { to: '/settings/contacts', label: 'Contacts', icon: '📇' },
   { to: '/settings/files', label: 'Files', icon: '📁' },
   { to: '/settings/reminders', label: 'Reminders', icon: '✅' },
-  { to: '/settings/contacts', label: 'Contacts', icon: '📇' },
+];
+
+// Section: Connections
+const connectionsItems = [
+  { to: '/settings/channels', label: 'Channels', icon: '📱' },
+  { to: '/settings/identities', label: 'Identities', icon: '🔗' },
   { to: '/settings/integrations', label: 'Integrations', icon: '🔌' },
 ];
 
+// Section: Automation
 const automationItems = [
-  { to: '/settings/skills', label: 'Skills', icon: '⚡' },
-  { to: '/automation/tools', label: 'Tools', icon: '🛠️' },
-  { to: '/automation/templates', label: 'Templates', icon: '📋' },
-  { to: '/automation/scripts', label: 'Scripts', icon: '🐍' },
   { to: '/automation/workflows', label: 'Workflows', icon: '🔗' },
   { to: '/automation/schedules', label: 'Schedules', icon: '⏰' },
   { to: '/automation/credentials', label: 'Credentials', icon: '🔑' },
 ];
 
+// Section: Admin (admin only) - includes Scripts
 const adminItems = [
   { to: '/admin/users', label: 'Users', icon: '👥' },
   { to: '/admin/system', label: 'System', icon: '⚙️' },
+  { to: '/automation/scripts', label: 'Scripts', icon: '🐍' },
   { to: '/admin/logs', label: 'Logs', icon: '📋' },
 ];
+
+// Reusable NavLink component
+function NavItem({ to, label, icon, end }: { to: string; label: string; icon: string; end?: boolean }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+          isActive
+            ? 'bg-gray-700 text-white'
+            : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+        }`
+      }
+    >
+      <span>{icon}</span>
+      {label}
+    </NavLink>
+  );
+}
+
+// Section header component
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <>
+      <div className="border-t border-gray-700 my-3" />
+      <p className="text-[10px] text-gray-500 uppercase tracking-wider px-3 mb-2 font-semibold">
+        {label}
+      </p>
+    </>
+  );
+}
 
 export function Layout() {
   const { user, logout } = useAuth();
@@ -48,63 +93,42 @@ export function Layout() {
           <p className="text-sm text-gray-400 mt-1">{user?.email}</p>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
-          {navItems.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  isActive
-                    ? 'bg-gray-700 text-white'
-                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                }`
-              }
-            >
-              <span>{item.icon}</span>
-              {item.label}
-            </NavLink>
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+          {/* Main items */}
+          {mainItems.map(item => (
+            <NavItem key={item.to} {...item} end={item.to === '/'} />
           ))}
 
-          <div className="border-t border-gray-700 my-3" />
-          <p className="text-xs text-gray-500 uppercase tracking-wider px-3 mb-2">Automation</p>
+          {/* My Assistant section */}
+          <SectionHeader label="My Assistant" />
+          {assistantItems.map(item => (
+            <NavItem key={item.to} {...item} />
+          ))}
+
+          {/* My Profile section */}
+          <SectionHeader label="My Profile" />
+          {profileItems.map(item => (
+            <NavItem key={item.to} {...item} />
+          ))}
+
+          {/* Connections section */}
+          <SectionHeader label="Connections" />
+          {connectionsItems.map(item => (
+            <NavItem key={item.to} {...item} />
+          ))}
+
+          {/* Automation section */}
+          <SectionHeader label="Automation" />
           {automationItems.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  isActive
-                    ? 'bg-gray-700 text-white'
-                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                }`
-              }
-            >
-              <span>{item.icon}</span>
-              {item.label}
-            </NavLink>
+            <NavItem key={item.to} {...item} />
           ))}
 
+          {/* Admin section (admin only) */}
           {user?.isAdmin && (
             <>
-              <div className="border-t border-gray-700 my-3" />
-              <p className="text-xs text-gray-500 uppercase tracking-wider px-3 mb-2">Admin</p>
+              <SectionHeader label="Admin" />
               {adminItems.map(item => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                      isActive
-                        ? 'bg-gray-700 text-white'
-                        : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                    }`
-                  }
-                >
-                  <span>{item.icon}</span>
-                  {item.label}
-                </NavLink>
+                <NavItem key={item.to} {...item} />
               ))}
             </>
           )}
