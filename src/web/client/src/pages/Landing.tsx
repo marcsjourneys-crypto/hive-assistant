@@ -221,6 +221,135 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Pixel divider */}
+      <div className="relative z-10 flex justify-center py-4">
+        <div className="flex gap-2">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="w-2 h-2 bg-c64-blue/50" />
+          ))}
+        </div>
+      </div>
+
+      {/* Smart Orchestration Section */}
+      <section className="relative z-10 py-16 md:py-24">
+        <div className="max-w-5xl mx-auto px-4">
+          <div className="flex flex-col md:flex-row items-center gap-8 md:gap-12">
+            {/* Diagram placeholder */}
+            <div className="flex-1 w-full">
+              <div className="relative">
+                <div className="absolute -inset-2 bg-gradient-to-br from-c64-purple/20 to-c64-blue/20 rounded-lg blur-sm" />
+                <div className="relative bg-gray-900 rounded-lg border-2 border-c64-purple/30 p-4 shadow-[0_0_30px_rgba(128,64,224,0.15)]">
+                  <img
+                    src="/screenshots/orchestration.png"
+                    alt="Smart Orchestration"
+                    className="w-full rounded"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const placeholderEl = target.nextElementSibling;
+                      if (placeholderEl) {
+                        placeholderEl.classList.remove('hidden');
+                      }
+                    }}
+                  />
+                  <div className="hidden aspect-video bg-gray-800 rounded flex items-center justify-center">
+                    <span className="text-gray-500 font-pixel text-xs">Orchestration Diagram</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 text-center md:text-left">
+              <h2 className="font-pixel text-xl md:text-2xl text-white mb-4">
+                SMART <span className="text-c64-purple">ORCHESTRATION</span>
+              </h2>
+              <p className="text-gray-300 text-lg leading-relaxed mb-6">
+                Hive's intelligent orchestration layer analyzes each message and routes it to the optimal AI model.
+                A lightweight model classifies intent first, dramatically reducing costs while maintaining quality.
+              </p>
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <span className="text-c64-cyan">▸</span>
+                  <p className="text-gray-400"><strong className="text-white">Choose Your AI:</strong> Use Claude, OpenAI, or run completely local with Ollama - your choice</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="text-c64-cyan">▸</span>
+                  <p className="text-gray-400"><strong className="text-white">Hybrid Mode:</strong> Try local first, fall back to cloud when needed</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="text-c64-cyan">▸</span>
+                  <p className="text-gray-400"><strong className="text-white">Context Aware:</strong> Only sends relevant context, not your entire history</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Pixel divider */}
+      <div className="relative z-10 flex justify-center py-4">
+        <div className="flex gap-2">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="w-2 h-2 bg-hive-500/50" />
+          ))}
+        </div>
+      </div>
+
+      {/* Multi-User & Community Section */}
+      <section className="relative z-10 py-16 md:py-24 bg-gray-900/30">
+        <div className="max-w-5xl mx-auto px-4">
+          <div className="flex flex-col md:flex-row-reverse items-center gap-8 md:gap-12">
+            {/* Visual */}
+            <div className="flex-1 w-full">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 border border-c64-blue/30 rounded-lg bg-black/50 text-center">
+                  <div className="text-4xl mb-2">👥</div>
+                  <p className="font-pixel text-xs text-hive-500">MULTI-USER</p>
+                </div>
+                <div className="p-4 border border-c64-purple/30 rounded-lg bg-black/50 text-center">
+                  <div className="text-4xl mb-2">🔄</div>
+                  <p className="font-pixel text-xs text-c64-cyan">SHARE</p>
+                </div>
+                <div className="p-4 border border-hive-500/30 rounded-lg bg-black/50 text-center">
+                  <div className="text-4xl mb-2">📋</div>
+                  <p className="font-pixel text-xs text-c64-purple">TEMPLATES</p>
+                </div>
+                <div className="p-4 border border-c64-cyan/30 rounded-lg bg-black/50 text-center">
+                  <div className="text-4xl mb-2">🚀</div>
+                  <p className="font-pixel text-xs text-hive-500">GROW</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 text-center md:text-left">
+              <h2 className="font-pixel text-xl md:text-2xl text-white mb-4">
+                TEAM <span className="text-hive-500">COLLABORATION</span>
+              </h2>
+              <p className="text-gray-300 text-lg leading-relaxed mb-6">
+                Hive is built for teams. Multiple users can share a single server, each with their own
+                conversations, preferences, and private data - while collaborating on shared resources.
+              </p>
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <span className="text-hive-500">▸</span>
+                  <p className="text-gray-400"><strong className="text-white">Share Workflows:</strong> Create automations and share them with your team instantly</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="text-hive-500">▸</span>
+                  <p className="text-gray-400"><strong className="text-white">Build Together:</strong> Fork and improve workflows from others - everyone benefits</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="text-hive-500">▸</span>
+                  <p className="text-gray-400"><strong className="text-white">Private by Default:</strong> Your conversations stay yours, share only what you choose</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* CTA Section */}
       <section className="relative z-10 py-16 md:py-24">
         <div className="max-w-4xl mx-auto px-4 text-center">
@@ -253,7 +382,7 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img src="/hive.png" alt="Hive" className="w-6 h-6" />
-            <span className="text-gray-500 text-sm">© 2024 Hive</span>
+            <span className="text-gray-500 text-sm">© {new Date().getFullYear()} Hive</span>
           </div>
 
           <div className="flex gap-6 text-sm text-gray-500">
