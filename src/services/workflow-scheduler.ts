@@ -241,34 +241,39 @@ export class WorkflowScheduler {
 
     console.log(`  [scheduler] Registering schedule ${scheduleId}: cron="${cronExpression}" tz="${timezone}" workflow=${workflowId}`);
 
-    const task = cron.schedule(cronExpression, async () => {
-      const tickTime = new Date().toISOString();
-      console.log(`  [scheduler] Cron tick at ${tickTime} for schedule ${scheduleId} (workflow ${workflowId})`);
-
-      try {
-        await this.workflowEngine.executeWorkflow(workflowId, ownerId);
-        console.log(`  [scheduler] Workflow ${workflowId} executed successfully for schedule ${scheduleId}`);
-
-        // Update schedule timestamps
-        const now = new Date();
-        const nextRun = WorkflowScheduler.getNextRunTime(cronExpression, timezone);
-
-        if (!nextRun) {
-          console.error(`  [scheduler] WARNING: Failed to compute next run time for schedule ${scheduleId}`);
-        }
+    // Use setImmediate to yield to the event loop immediately.
+    // This prevents node-cron from reporting "missed execution" warnings
+    // when the workflow execution takes time.
+    const task = cron.schedule(cronExpression, () => {
+      setImmediate(async () => {
+        const tickTime = new Date().toISOString();
+        console.log(`  [scheduler] Cron tick at ${tickTime} for schedule ${scheduleId} (workflow ${workflowId})`);
 
         try {
-          await this.db.updateSchedule(scheduleId, {
-            lastRunAt: now,
-            nextRunAt: nextRun || undefined
-          });
-          console.log(`  [scheduler] Updated schedule ${scheduleId}: lastRun=${now.toISOString()}, nextRun=${nextRun?.toISOString() || 'null'}`);
-        } catch (dbErr: any) {
-          console.error(`  [scheduler] CRITICAL: Failed to update schedule ${scheduleId} in database:`, dbErr.message);
+          await this.workflowEngine.executeWorkflow(workflowId, ownerId);
+          console.log(`  [scheduler] Workflow ${workflowId} executed successfully for schedule ${scheduleId}`);
+
+          // Update schedule timestamps
+          const now = new Date();
+          const nextRun = WorkflowScheduler.getNextRunTime(cronExpression, timezone);
+
+          if (!nextRun) {
+            console.error(`  [scheduler] WARNING: Failed to compute next run time for schedule ${scheduleId}`);
+          }
+
+          try {
+            await this.db.updateSchedule(scheduleId, {
+              lastRunAt: now,
+              nextRunAt: nextRun || undefined
+            });
+            console.log(`  [scheduler] Updated schedule ${scheduleId}: lastRun=${now.toISOString()}, nextRun=${nextRun?.toISOString() || 'null'}`);
+          } catch (dbErr: any) {
+            console.error(`  [scheduler] CRITICAL: Failed to update schedule ${scheduleId} in database:`, dbErr.message);
+          }
+        } catch (err: any) {
+          console.error(`  [scheduler] Schedule ${scheduleId} execution failed:`, err.message);
         }
-      } catch (err: any) {
-        console.error(`  [scheduler] Schedule ${scheduleId} execution failed:`, err.message);
-      }
+      });
     }, {
       timezone
     });
