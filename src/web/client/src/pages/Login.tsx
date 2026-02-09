@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../auth-context';
 
 export default function Login() {
@@ -28,74 +29,96 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-black">
+      {/* Scanline overlay */}
+      <div className="fixed inset-0 pointer-events-none opacity-[0.03]"
+           style={{
+             backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.1) 2px, rgba(255,255,255,0.1) 4px)'
+           }}
+      />
+
+      <div className="w-full max-w-md relative z-10">
+        {/* Logo */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Hive</h1>
-          <p className="text-gray-500 mt-2">Personal AI Assistant Dashboard</p>
+          <Link to="/">
+            <img
+              src="/hive.png"
+              alt="Hive"
+              className="w-48 h-48 mx-auto mb-4 drop-shadow-[0_0_30px_rgba(64,64,224,0.5)]"
+            />
+          </Link>
+          <p className="text-gray-400 text-sm">Personal AI Assistant</p>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-          <h2 className="text-xl font-semibold mb-6">
-            {isRegister ? 'Create account' : 'Sign in'}
+        {/* Login Card with C64 glow effect */}
+        <div className="bg-gray-900 rounded-xl p-8 border border-c64-blue/30 shadow-[0_0_40px_rgba(64,64,224,0.2)]">
+          <h2 className="font-pixel text-lg text-white mb-6 text-center">
+            {isRegister ? 'CREATE ACCOUNT' : 'SIGN IN'}
           </h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-hive-500 focus:border-transparent outline-none"
+                className="w-full px-3 py-2 bg-black border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-c64-blue focus:border-transparent outline-none"
                 placeholder="you@example.com"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
               <input
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
                 minLength={8}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-hive-500 focus:border-transparent outline-none"
+                className="w-full px-3 py-2 bg-black border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-c64-blue focus:border-transparent outline-none"
                 placeholder="Minimum 8 characters"
               />
             </div>
 
             {error && (
-              <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg">{error}</div>
+              <div className="text-red-400 text-sm bg-red-900/30 border border-red-800 p-3 rounded-lg">{error}</div>
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2 px-4 bg-hive-500 hover:bg-hive-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
+              className="w-full py-2 px-4 bg-hive-500 hover:bg-hive-600 text-black font-medium rounded-lg transition-colors disabled:opacity-50"
             >
               {loading ? 'Please wait...' : isRegister ? 'Create account' : 'Sign in'}
             </button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-gray-500">
+          <div className="mt-6 text-center text-sm text-gray-400">
             {isRegister ? (
               <>
                 Already have an account?{' '}
-                <button onClick={() => setIsRegister(false)} className="text-hive-600 hover:underline">
+                <button onClick={() => setIsRegister(false)} className="text-c64-cyan hover:underline">
                   Sign in
                 </button>
               </>
             ) : (
               <>
                 No account?{' '}
-                <button onClick={() => setIsRegister(true)} className="text-hive-600 hover:underline">
+                <button onClick={() => setIsRegister(true)} className="text-c64-cyan hover:underline">
                   Create one
                 </button>
               </>
             )}
           </div>
+        </div>
+
+        {/* Back to home link */}
+        <div className="mt-6 text-center">
+          <Link to="/" className="text-gray-500 hover:text-gray-300 text-sm">
+            ← Back to home
+          </Link>
         </div>
       </div>
     </div>

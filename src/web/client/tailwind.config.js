@@ -18,8 +18,16 @@ export default {
           700: '#a16207',
           800: '#854d0e',
           900: '#713f12',
+        },
+        c64: {
+          blue: '#4040e0',
+          purple: '#8040e0',
+          cyan: '#40e0e0',
         }
-      }
+      },
+      fontFamily: {
+        pixel: ['"Press Start 2P"', 'cursive'],
+      },
     },
   },
   plugins: [],

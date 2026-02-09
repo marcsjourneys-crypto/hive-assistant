@@ -3,7 +3,7 @@ import { useAuth } from '../auth-context';
 
 // Main items (no section header)
 const mainItems = [
-  { to: '/', label: 'Dashboard', icon: '📊' },
+  { to: '/dashboard', label: 'Dashboard', icon: '📊' },
   { to: '/chat', label: 'Chat', icon: '💬' },
 ];
 
@@ -96,7 +96,7 @@ export function Layout() {
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {/* Main items */}
           {mainItems.map(item => (
-            <NavItem key={item.to} {...item} end={item.to === '/'} />
+            <NavItem key={item.to} {...item} end={item.to === '/dashboard'} />
           ))}
 
           {/* My Assistant section */}
