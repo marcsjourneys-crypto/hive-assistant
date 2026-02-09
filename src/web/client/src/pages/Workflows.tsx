@@ -666,6 +666,18 @@ export default function WorkflowsPage() {
         </div>
       )}
 
+      {/* Template Gallery Toggle (always visible when templates exist) */}
+      {!editing && templates.length > 0 && !showTemplates && workflowList.length > 0 && (
+        <div className="mb-4">
+          <button
+            onClick={() => setShowTemplates(true)}
+            className="text-sm text-hive-600 hover:text-hive-700 flex items-center gap-1"
+          >
+            <span>📋</span> View quick start templates
+          </button>
+        </div>
+      )}
+
       {/* Template Gallery */}
       {!editing && templates.length > 0 && (showTemplates || workflowList.length === 0) && (
         <div className="mb-6">
@@ -673,10 +685,10 @@ export default function WorkflowsPage() {
             <h2 className="text-sm font-medium text-gray-700">Quick Start Templates</h2>
             {workflowList.length > 0 && (
               <button
-                onClick={() => setShowTemplates(!showTemplates)}
+                onClick={() => setShowTemplates(false)}
                 className="text-xs text-gray-400 hover:text-gray-600"
               >
-                {showTemplates ? 'Hide' : 'Show'}
+                Hide
               </button>
             )}
           </div>
