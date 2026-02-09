@@ -1,6 +1,53 @@
 import { useState, useEffect } from 'react';
 import { workflows, scripts, skills, credentials, channelIdentities, tools, WorkflowInfo, WorkflowRunResult, WorkflowRunInfo, ScriptInfo, SkillInfo, CredentialInfo, ChannelIdentityInfo, ToolInfo } from '../api';
 
+// Types for action registry and templates
+interface UserInputSchema {
+  type: 'string' | 'number' | 'boolean' | 'select';
+  label: string;
+  description?: string;
+  default?: unknown;
+  required?: boolean;
+  placeholder?: string;
+}
+
+interface ActionDefinition {
+  id: string;
+  category: string;
+  label: string;
+  description: string;
+  icon?: string;
+  stepType: 'tool' | 'notify' | 'skill';
+  toolName?: string;
+  channel?: string;
+  skillName?: string;
+  presetInputs: Record<string, unknown>;
+  userInputs: Record<string, UserInputSchema>;
+  adminOnly?: boolean;
+}
+
+interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  icon?: string;
+  stepCount: number;
+  suggestedSchedule?: string;
+}
+
+interface GenerateResult {
+  name: string;
+  description: string;
+  steps: StepDef[];
+  reasoning: string;
+  validation: {
+    isValid: boolean;
+    errors: Array<{ stepId?: string; message: string }>;
+    warnings: Array<{ stepId?: string; message: string }>;
+  };
+}
+
 interface InputMapping {
   type: 'static' | 'ref' | 'credential';
   value?: string;
@@ -59,19 +106,34 @@ export default function WorkflowsPage() {
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
 
+  // Template and AI state
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
+  const [actionsByCategory, setActionsByCategory] = useState<Record<string, ActionDefinition[]>>({});
+  const [showAIBuilder, setShowAIBuilder] = useState(false);
+  const [aiDescription, setAiDescription] = useState('');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiResult, setAiResult] = useState<GenerateResult | null>(null);
+  const [showTemplates, setShowTemplates] = useState(true);
+
+  // Step picker state
+  const [showStepPicker, setShowStepPicker] = useState(false);
+  const [stepPickerCategory, setStepPickerCategory] = useState<string | null>(null);
+
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
     try {
-      const [w, s, sk, creds, ids, tls] = await Promise.all([
+      const [w, s, sk, creds, ids, tls, tmpls, acts] = await Promise.all([
         workflows.list(),
         scripts.list(),
         skills.list(),
         credentials.list().catch(() => [] as CredentialInfo[]),
         channelIdentities.list().catch(() => [] as ChannelIdentityInfo[]),
-        tools.list().catch(() => [] as ToolInfo[])
+        tools.list().catch(() => [] as ToolInfo[]),
+        workflows.getTemplates().catch(() => [] as WorkflowTemplate[]),
+        workflows.getActions().catch(() => ({} as Record<string, ActionDefinition[]>))
       ]);
       setWorkflowList(w);
       setScriptList(s);
@@ -79,6 +141,10 @@ export default function WorkflowsPage() {
       setCredentialList(creds);
       setIdentityList(ids);
       setToolList(tls);
+      setTemplates(tmpls);
+      setActionsByCategory(acts);
+      // Show templates section if no workflows exist yet
+      setShowTemplates(w.length === 0);
     } catch (err: any) {
       setError(err.message);
     }
@@ -178,6 +244,49 @@ export default function WorkflowsPage() {
       ...f,
       steps: [...f.steps, step]
     }));
+  };
+
+  // Add step from pre-built action
+  const addStepFromAction = (action: ActionDefinition) => {
+    const step: StepDef = {
+      id: newStepId(),
+      type: action.stepType,
+      label: action.label,
+      inputs: {}
+    };
+
+    // Set up based on step type
+    if (action.stepType === 'tool' && action.toolName) {
+      step.toolName = action.toolName;
+    }
+    if (action.stepType === 'notify' && action.channel) {
+      step.channel = action.channel;
+    }
+    if (action.stepType === 'skill') {
+      step.skillName = action.skillName;
+    }
+
+    // Add preset inputs as static values
+    for (const [key, value] of Object.entries(action.presetInputs)) {
+      step.inputs[key] = { type: 'static', value: String(value) };
+    }
+
+    // Add user inputs with defaults
+    for (const [key, schema] of Object.entries(action.userInputs || {})) {
+      const typedSchema = schema as { default?: unknown; type: string };
+      if (typedSchema.default !== undefined) {
+        step.inputs[key] = { type: 'static', value: String(typedSchema.default) };
+      } else {
+        step.inputs[key] = { type: 'static', value: '' };
+      }
+    }
+
+    setForm(f => ({
+      ...f,
+      steps: [...f.steps, step]
+    }));
+    setShowStepPicker(false);
+    setStepPickerCategory(null);
   };
 
   const removeStep = (idx: number) => {
@@ -323,19 +432,277 @@ export default function WorkflowsPage() {
   const getPreviousSteps = (currentIdx: number) =>
     form.steps.slice(0, currentIdx).map(s => s.id);
 
+  // Template and AI handlers
+  const handleUseTemplate = async (templateId: string) => {
+    try {
+      const wf = await workflows.createFromTemplate(templateId);
+      await loadData();
+      startEdit(wf);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleAIGenerate = async () => {
+    if (!aiDescription.trim()) {
+      setError('Please describe what you want the workflow to do.');
+      return;
+    }
+    setAiGenerating(true);
+    setAiResult(null);
+    setError('');
+    try {
+      const result = await workflows.generate(aiDescription);
+      setAiResult(result as GenerateResult);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  const handleConfirmGenerated = async () => {
+    if (!aiResult) return;
+    try {
+      const wf = await workflows.confirmGenerated(
+        aiResult.name,
+        aiResult.description,
+        aiResult.steps
+      );
+      setShowAIBuilder(false);
+      setAiDescription('');
+      setAiResult(null);
+      await loadData();
+      startEdit(wf);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleEditGenerated = () => {
+    if (!aiResult) return;
+    // Load the generated steps into the editor
+    stepCounter = aiResult.steps.length;
+    setForm({
+      name: aiResult.name,
+      description: aiResult.description,
+      steps: aiResult.steps as StepDef[]
+    });
+    setEditing('new');
+    setShowAIBuilder(false);
+    setAiDescription('');
+    setAiResult(null);
+  };
+
   return (
     <div className="max-w-4xl">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Workflows</h1>
         {!editing && (
-          <button
-            onClick={startCreate}
-            className="px-4 py-2 bg-hive-500 text-white rounded-lg text-sm font-medium hover:bg-hive-600 transition-colors"
-          >
-            + New Workflow
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowAIBuilder(true)}
+              className="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm font-medium hover:bg-purple-600 transition-colors flex items-center gap-2"
+            >
+              <span>🤖</span> Create with AI
+            </button>
+            <button
+              onClick={startCreate}
+              className="px-4 py-2 bg-hive-500 text-white rounded-lg text-sm font-medium hover:bg-hive-600 transition-colors"
+            >
+              + New Workflow
+            </button>
+          </div>
         )}
       </div>
+
+      {/* AI Workflow Builder Modal */}
+      {showAIBuilder && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <span>🤖</span> Create Workflow with AI
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowAIBuilder(false);
+                    setAiDescription('');
+                    setAiResult(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 text-xl"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {!aiResult ? (
+                <>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Describe what you want your workflow to do in plain English. For example:
+                    <br />
+                    <em className="text-gray-400">"Every morning, get my unread emails and today's calendar events, summarize them, and send to Telegram"</em>
+                  </p>
+
+                  <textarea
+                    value={aiDescription}
+                    onChange={e => setAiDescription(e.target.value)}
+                    placeholder="Describe your workflow..."
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                    rows={4}
+                    disabled={aiGenerating}
+                  />
+
+                  <div className="flex justify-end gap-3 mt-4">
+                    <button
+                      onClick={() => {
+                        setShowAIBuilder(false);
+                        setAiDescription('');
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleAIGenerate}
+                      disabled={aiGenerating || !aiDescription.trim()}
+                      className="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm font-medium hover:bg-purple-600 disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {aiGenerating ? (
+                        <>
+                          <span className="animate-spin">⏳</span> Generating...
+                        </>
+                      ) : (
+                        'Generate Workflow'
+                      )}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* AI Result Preview */}
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="font-medium">{aiResult.name}</h3>
+                      <p className="text-sm text-gray-500">{aiResult.description}</p>
+                    </div>
+
+                    {/* Validation Status */}
+                    {!aiResult.validation.isValid && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                        <p className="text-sm font-medium text-red-700 mb-2">Validation Issues:</p>
+                        {aiResult.validation.errors.map((err, i) => (
+                          <p key={i} className="text-sm text-red-600">
+                            {err.stepId && <span className="font-mono">[{err.stepId}]</span>} {err.message}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+
+                    {aiResult.validation.warnings.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        <p className="text-sm font-medium text-amber-700 mb-2">Warnings:</p>
+                        {aiResult.validation.warnings.map((warn, i) => (
+                          <p key={i} className="text-sm text-amber-600">
+                            {warn.stepId && <span className="font-mono">[{warn.stepId}]</span>} {warn.message}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Steps Preview */}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">Steps:</h4>
+                      <div className="space-y-2">
+                        {aiResult.steps.map((step, i) => (
+                          <div key={step.id} className="flex items-center gap-2">
+                            <span className="text-xs font-mono bg-gray-100 px-2 py-0.5 rounded">{step.id}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              step.type === 'tool' ? 'bg-amber-100 text-amber-700' :
+                              step.type === 'notify' ? 'bg-green-100 text-green-700' :
+                              'bg-purple-100 text-purple-700'
+                            }`}>
+                              {step.type}
+                            </span>
+                            <span className="text-sm text-gray-600">{step.label || step.toolName || step.skillName || step.channel}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Reasoning */}
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">AI Reasoning:</p>
+                      <p className="text-sm text-gray-600">{aiResult.reasoning}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 mt-6">
+                    <button
+                      onClick={() => setAiResult(null)}
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                    >
+                      Try Again
+                    </button>
+                    <button
+                      onClick={handleEditGenerated}
+                      className="px-4 py-2 border border-purple-300 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-50"
+                    >
+                      Edit Manually
+                    </button>
+                    <button
+                      onClick={handleConfirmGenerated}
+                      disabled={!aiResult.validation.isValid}
+                      className="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm font-medium hover:bg-purple-600 disabled:opacity-50"
+                    >
+                      Create Workflow
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template Gallery */}
+      {!editing && templates.length > 0 && (showTemplates || workflowList.length === 0) && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium text-gray-700">Quick Start Templates</h2>
+            {workflowList.length > 0 && (
+              <button
+                onClick={() => setShowTemplates(!showTemplates)}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                {showTemplates ? 'Hide' : 'Show'}
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {templates.map(t => (
+              <button
+                key={t.id}
+                onClick={() => handleUseTemplate(t.id)}
+                className="bg-white border border-gray-200 rounded-xl p-4 text-left hover:border-hive-300 hover:shadow-sm transition-all"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">{t.icon || '📋'}</span>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium text-sm">{t.name}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{t.description}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{t.stepCount} steps</span>
+                      <span className="text-xs text-gray-400">{t.category}</span>
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="text-red-600 bg-red-50 p-3 rounded-lg mb-4 flex items-center justify-between">
@@ -701,31 +1068,94 @@ export default function WorkflowsPage() {
                 ))}
               </div>
 
-              <div className="flex gap-2 mt-3">
+              {/* Categorized Step Picker */}
+              <div className="relative mt-3">
                 <button
-                  onClick={() => addStep('script')}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                  onClick={() => setShowStepPicker(!showStepPicker)}
+                  className="px-4 py-2 bg-hive-100 text-hive-700 rounded-lg text-sm font-medium hover:bg-hive-200 transition-colors flex items-center gap-2"
                 >
-                  + Script Step
+                  <span className="text-lg">+</span> Add Step
                 </button>
-                <button
-                  onClick={() => addStep('skill')}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors"
-                >
-                  + Skill Step
-                </button>
-                <button
-                  onClick={() => addStep('tool')}
-                  className="px-3 py-1.5 border border-amber-300 rounded-lg text-xs text-amber-700 hover:bg-amber-50 transition-colors"
-                >
-                  + Tool Step
-                </button>
-                <button
-                  onClick={() => addStep('notify')}
-                  className="px-3 py-1.5 border border-green-300 rounded-lg text-xs text-green-700 hover:bg-green-50 transition-colors"
-                >
-                  + Notify Step
-                </button>
+
+                {showStepPicker && (
+                  <div className="absolute left-0 top-full mt-2 bg-white rounded-xl border border-gray-200 shadow-lg z-10 min-w-[300px]">
+                    {stepPickerCategory === null ? (
+                      // Category selection
+                      <div className="p-2">
+                        <p className="text-xs text-gray-400 px-2 py-1 mb-1">Choose a category</p>
+                        {Object.entries(actionsByCategory).map(([category, actions]) => {
+                          const icon = actions[0]?.icon || '📋';
+                          const categoryColors: Record<string, string> = {
+                            'Email': 'hover:bg-blue-50 text-blue-700',
+                            'Calendar': 'hover:bg-purple-50 text-purple-700',
+                            'Notifications': 'hover:bg-green-50 text-green-700',
+                            'Data': 'hover:bg-amber-50 text-amber-700',
+                            'AI Assistant': 'hover:bg-pink-50 text-pink-700',
+                            'Advanced': 'hover:bg-gray-100 text-gray-600'
+                          };
+                          return (
+                            <button
+                              key={category}
+                              onClick={() => setStepPickerCategory(category)}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm transition-colors ${categoryColors[category] || 'hover:bg-gray-50'}`}
+                            >
+                              <span className="text-lg">{icon}</span>
+                              <div className="flex-1">
+                                <span className="font-medium">{category}</span>
+                                <span className="text-xs text-gray-400 ml-2">{actions.length} action{actions.length !== 1 ? 's' : ''}</span>
+                              </div>
+                              <span className="text-gray-300">›</span>
+                            </button>
+                          );
+                        })}
+                        <div className="border-t border-gray-100 mt-2 pt-2">
+                          <button
+                            onClick={() => { setShowStepPicker(false); addStep('skill'); }}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm hover:bg-purple-50 text-purple-700 transition-colors"
+                          >
+                            <span className="text-lg">🎯</span>
+                            <div className="flex-1">
+                              <span className="font-medium">Use a Skill</span>
+                              <span className="text-xs text-gray-400 ml-2">from your library</span>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      // Action selection within category
+                      <div className="p-2">
+                        <button
+                          onClick={() => setStepPickerCategory(null)}
+                          className="flex items-center gap-2 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 mb-1"
+                        >
+                          <span>‹</span> Back
+                        </button>
+                        <p className="text-xs text-gray-400 px-2 py-1">{stepPickerCategory}</p>
+                        {(actionsByCategory[stepPickerCategory] || []).map(action => (
+                          <button
+                            key={action.id}
+                            onClick={() => addStepFromAction(action)}
+                            className="w-full flex items-start gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-gray-50 transition-colors"
+                          >
+                            <span className="text-lg mt-0.5">{action.icon || '📋'}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-700">{action.label}</p>
+                              <p className="text-xs text-gray-400 line-clamp-1">{action.description}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="border-t border-gray-100 p-2">
+                      <button
+                        onClick={() => { setShowStepPicker(false); setStepPickerCategory(null); }}
+                        className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-1"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

@@ -505,6 +505,77 @@ export const workflows = {
     request<WorkflowRunInfo[]>(`/workflows/${id}/runs${limit ? `?limit=${limit}` : ''}`),
   getRun: (runId: string) =>
     request<WorkflowRunInfo>(`/workflows/runs/${runId}`),
+
+  // Templates and Actions
+  getTemplates: () =>
+    request<Array<{
+      id: string;
+      name: string;
+      description: string;
+      category: string;
+      icon?: string;
+      stepCount: number;
+      suggestedSchedule?: string;
+    }>>('/workflows/templates'),
+  getTemplate: (id: string) =>
+    request<{
+      id: string;
+      name: string;
+      description: string;
+      category: string;
+      icon?: string;
+      steps: unknown[];
+      suggestedSchedule?: string;
+    }>(`/workflows/templates/${id}`),
+  getActions: () =>
+    request<Record<string, Array<{
+      id: string;
+      category: string;
+      label: string;
+      description: string;
+      icon?: string;
+      stepType: 'tool' | 'notify' | 'skill';
+      toolName?: string;
+      channel?: string;
+      skillName?: string;
+      presetInputs: Record<string, unknown>;
+      userInputs: Record<string, {
+        type: 'string' | 'number' | 'boolean' | 'select';
+        label: string;
+        description?: string;
+        default?: unknown;
+        required?: boolean;
+        placeholder?: string;
+      }>;
+      adminOnly?: boolean;
+    }>>>('/workflows/actions'),
+  createFromTemplate: (templateId: string, name?: string, description?: string) =>
+    request<WorkflowInfo>('/workflows/from-template', {
+      method: 'POST',
+      body: JSON.stringify({ templateId, name, description }),
+    }),
+
+  // AI Generation
+  generate: (description: string) =>
+    request<{
+      name: string;
+      description: string;
+      steps: unknown[];
+      reasoning: string;
+      validation: {
+        isValid: boolean;
+        errors: Array<{ stepId?: string; message: string }>;
+        warnings: Array<{ stepId?: string; message: string }>;
+      };
+    }>('/workflows/generate', {
+      method: 'POST',
+      body: JSON.stringify({ description }),
+    }),
+  confirmGenerated: (name: string, description: string, steps: unknown[]) =>
+    request<WorkflowInfo>('/workflows/generate/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ name, description, steps }),
+    }),
 };
 
 // Tools

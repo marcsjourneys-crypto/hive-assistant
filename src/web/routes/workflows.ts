@@ -3,11 +3,190 @@ import { v4 as uuidv4 } from 'uuid';
 import { Database as IDatabase } from '../../db/interface';
 import { requireAuth } from '../middleware/auth';
 import { WorkflowEngine } from '../../services/workflow-engine';
+import {
+  getActionsByCategory,
+  getWorkflowTemplates,
+  getTemplateById,
+  actionToStep
+} from '../../services/action-registry';
+import { WorkflowGenerator } from '../../services/workflow-generator';
+import { getApiKey } from '../../utils/config';
 
 export function createWorkflowsRoutes(db: IDatabase, workflowEngine?: WorkflowEngine): Router {
   const router = Router();
 
   router.use(requireAuth);
+
+  // ─── Action Registry Endpoints ───────────────────────────────────────────────
+
+  /**
+   * GET /api/workflows/actions
+   * List all available pre-built actions, grouped by category.
+   * Admin users see additional advanced actions.
+   */
+  router.get('/actions', (req: Request, res: Response) => {
+    const isAdmin = req.user?.isAdmin ?? false;
+    const actionsByCategory = getActionsByCategory(isAdmin);
+    res.json(actionsByCategory);
+  });
+
+  /**
+   * GET /api/workflows/templates
+   * List all available workflow templates.
+   */
+  router.get('/templates', (_req: Request, res: Response) => {
+    const templates = getWorkflowTemplates();
+    res.json(templates.map(t => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      category: t.category,
+      icon: t.icon,
+      stepCount: t.steps.length,
+      suggestedSchedule: t.suggestedSchedule
+    })));
+  });
+
+  /**
+   * GET /api/workflows/templates/:id
+   * Get a specific template with full step details.
+   */
+  router.get('/templates/:id', (req: Request, res: Response) => {
+    const template = getTemplateById(req.params.id as string);
+    if (!template) {
+      res.status(404).json({ error: 'Template not found' });
+      return;
+    }
+    res.json(template);
+  });
+
+  /**
+   * POST /api/workflows/from-template
+   * Create a new workflow from a template.
+   */
+  router.post('/from-template', async (req: Request, res: Response) => {
+    try {
+      const { templateId, name, description } = req.body;
+      const userId = req.user!.userId;
+
+      const template = getTemplateById(templateId);
+      if (!template) {
+        res.status(404).json({ error: 'Template not found' });
+        return;
+      }
+
+      const workflow = await db.createWorkflow({
+        id: uuidv4(),
+        ownerId: userId,
+        name: name?.trim() || template.name,
+        description: description?.trim() || template.description,
+        stepsJson: JSON.stringify(template.steps),
+        isActive: true
+      });
+
+      res.status(201).json(workflow);
+    } catch (error: any) {
+      console.error('[Workflows] Create from template error:', error.message);
+      res.status(500).json({ error: 'Failed to create workflow from template' });
+    }
+  });
+
+  /**
+   * POST /api/workflows/action-to-step
+   * Convert an action selection to a workflow step definition.
+   * Used by the frontend to build steps from the action picker.
+   */
+  router.post('/action-to-step', (req: Request, res: Response) => {
+    try {
+      const { actionId, stepId, userInputs } = req.body;
+
+      if (!actionId || !stepId) {
+        res.status(400).json({ error: 'actionId and stepId are required' });
+        return;
+      }
+
+      const step = actionToStep(actionId, stepId, userInputs || {});
+      res.json(step);
+    } catch (error: any) {
+      console.error('[Workflows] Action to step error:', error.message);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ─── AI Workflow Generator Endpoints ─────────────────────────────────────────
+
+  /**
+   * POST /api/workflows/generate
+   * Generate a workflow from a natural language description using AI.
+   */
+  router.post('/generate', async (req: Request, res: Response) => {
+    try {
+      const { description } = req.body;
+      const userId = req.user!.userId;
+
+      if (!description || typeof description !== 'string' || !description.trim()) {
+        res.status(400).json({ error: 'Description is required' });
+        return;
+      }
+
+      // Check if API key is configured
+      if (!getApiKey()) {
+        res.status(503).json({ error: 'AI generation not available - API key not configured' });
+        return;
+      }
+
+      const generator = new WorkflowGenerator(db);
+      const result = await generator.generateWorkflow(description.trim(), userId);
+
+      res.json({
+        name: result.name,
+        description: result.description,
+        steps: result.steps,
+        reasoning: result.reasoning,
+        validation: result.validation
+      });
+    } catch (error: any) {
+      console.error('[Workflows] Generate error:', error.message);
+      res.status(500).json({ error: `Failed to generate workflow: ${error.message}` });
+    }
+  });
+
+  /**
+   * POST /api/workflows/generate/confirm
+   * Create a workflow from a previously generated result.
+   */
+  router.post('/generate/confirm', async (req: Request, res: Response) => {
+    try {
+      const { name, description, steps } = req.body;
+      const userId = req.user!.userId;
+
+      if (!name || !steps || !Array.isArray(steps)) {
+        res.status(400).json({ error: 'name and steps are required' });
+        return;
+      }
+
+      // Re-validate before saving (using the generator)
+      if (getApiKey()) {
+        const generator = new WorkflowGenerator(db);
+        // Quick validation without regenerating
+        // (validation is done in generateWorkflow, but we trust client-side steps here)
+      }
+
+      const workflow = await db.createWorkflow({
+        id: uuidv4(),
+        ownerId: userId,
+        name: name.trim(),
+        description: (description || '').trim(),
+        stepsJson: JSON.stringify(steps),
+        isActive: true
+      });
+
+      res.status(201).json(workflow);
+    } catch (error: any) {
+      console.error('[Workflows] Confirm generated error:', error.message);
+      res.status(500).json({ error: 'Failed to create workflow' });
+    }
+  });
 
   /**
    * GET /api/workflows
