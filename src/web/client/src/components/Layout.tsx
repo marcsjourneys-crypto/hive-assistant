@@ -52,8 +52,8 @@ function NavItem({ to, label, icon, end }: { to: string; label: string; icon: st
       className={({ isActive }) =>
         `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
           isActive
-            ? 'bg-gray-700 text-white'
-            : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+            ? 'bg-white/20 text-white'
+            : 'text-white/80 hover:bg-white/10 hover:text-white'
         }`
       }
     >
@@ -67,8 +67,8 @@ function NavItem({ to, label, icon, end }: { to: string; label: string; icon: st
 function SectionHeader({ label }: { label: string }) {
   return (
     <>
-      <div className="border-t border-gray-700 my-3" />
-      <p className="text-[10px] text-gray-500 uppercase tracking-wider px-3 mb-2 font-semibold">
+      <div className="border-t border-white/10 my-3" />
+      <p className="text-[10px] text-white/50 uppercase tracking-wider px-3 mb-2 font-semibold">
         {label}
       </p>
     </>
@@ -87,10 +87,10 @@ export function Layout() {
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
-      <aside className="w-64 bg-gray-900 text-white flex flex-col">
-        <div className="p-4 border-b border-gray-700">
-          <img src="/hive.png" alt="Hive" className="h-12 mb-2" />
-          <p className="text-sm text-gray-400">{user?.email}</p>
+      <aside className="w-64 bg-[#1e3a3a] text-white flex flex-col">
+        <div className="p-4 border-b border-white/10">
+          <img src="/hive.png" alt="Hive" className="w-full max-w-[200px] mx-auto mb-3" />
+          <p className="text-sm text-white/70 text-center">{user?.email}</p>
         </div>
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -134,7 +134,7 @@ export function Layout() {
           )}
         </nav>
 
-        <div className="p-4 border-t border-gray-700">
+        <div className="p-4 border-t border-white/10">
           <button
             onClick={handleLogout}
             className="w-full text-left text-sm text-gray-400 hover:text-white transition-colors"
