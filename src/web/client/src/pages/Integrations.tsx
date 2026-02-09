@@ -48,10 +48,11 @@ export default function IntegrationsPage() {
         missing_params: 'OAuth callback missing required parameters.',
         invalid_state: 'Invalid OAuth state. Please try again.',
         expired_state: 'OAuth session expired. Please try again.',
-        not_configured: 'Google OAuth is not configured. Ask an admin to set it up.',
+        not_configured: 'Google OAuth is not configured. Set google.clientId and google.clientSecret in your Hive config.',
         token_exchange_failed: 'Failed to exchange authorization code. Please try again.',
         no_refresh_token: 'No refresh token received. Please try again and ensure you grant offline access.',
         callback_failed: 'OAuth callback failed. Please try again.',
+        connect_failed: 'Failed to start OAuth flow. Please try again.',
       };
       setMessage({ type: 'error', text: errorMessages[error] || `Connection failed: ${error}` });
       window.history.replaceState({}, '', window.location.pathname);

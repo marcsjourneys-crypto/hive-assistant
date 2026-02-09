@@ -67,7 +67,8 @@ export function createIntegrationsRoutes(
     try {
       const config = getConfig();
       if (!config.google?.clientId || !config.google?.clientSecret) {
-        res.status(400).json({ error: 'Google OAuth is not configured. An admin needs to set Client ID and Secret in System settings.' });
+        // Redirect with error since this is a direct link navigation
+        res.redirect('/settings/integrations?error=not_configured');
         return;
       }
 
@@ -99,7 +100,7 @@ export function createIntegrationsRoutes(
       res.redirect(`${GOOGLE_AUTH_URL}?${params}`);
     } catch (error: any) {
       console.error('[Integrations] Google connect error:', error.message);
-      res.status(500).json({ error: 'Failed to start Google OAuth flow' });
+      res.redirect('/settings/integrations?error=connect_failed');
     }
   });
 
