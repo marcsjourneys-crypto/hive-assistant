@@ -1,46 +1,46 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth-context';
 
-// Main items (no section header)
+// Main items (no section header) - Retro ASCII icons
 const mainItems = [
-  { to: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { to: '/chat', label: 'Chat', icon: '💬' },
+  { to: '/dashboard', label: 'Dashboard', icon: '▣' },
+  { to: '/chat', label: 'Chat', icon: '▸' },
 ];
 
 // Section: My Assistant
 const assistantItems = [
-  { to: '/settings/soul', label: 'Personality', icon: '🎭' },
+  { to: '/settings/soul', label: 'Personality', icon: '◉' },
   { to: '/settings/skills', label: 'Skills', icon: '⚡' },
 ];
 
 // Section: My Profile
 const profileItems = [
-  { to: '/settings/profile', label: 'Profile', icon: '👤' },
-  { to: '/settings/contacts', label: 'Contacts', icon: '📇' },
-  { to: '/settings/files', label: 'Files', icon: '📁' },
-  { to: '/settings/reminders', label: 'Reminders', icon: '✅' },
+  { to: '/settings/profile', label: 'Profile', icon: '●' },
+  { to: '/settings/contacts', label: 'Contacts', icon: '▤' },
+  { to: '/settings/files', label: 'Files', icon: '▢' },
+  { to: '/settings/reminders', label: 'Reminders', icon: '✓' },
 ];
 
 // Section: Connections
 const connectionsItems = [
-  { to: '/settings/channels', label: 'Channels', icon: '📱' },
-  { to: '/settings/identities', label: 'Identities', icon: '🔗' },
-  { to: '/settings/integrations', label: 'Integrations', icon: '🔌' },
+  { to: '/settings/channels', label: 'Channels', icon: '▥' },
+  { to: '/settings/identities', label: 'Identities', icon: '∞' },
+  { to: '/settings/integrations', label: 'Integrations', icon: '⊕' },
 ];
 
 // Section: Automation
 const automationItems = [
-  { to: '/automation/workflows', label: 'Workflows', icon: '🔗' },
-  { to: '/automation/schedules', label: 'Schedules', icon: '⏰' },
-  { to: '/automation/credentials', label: 'Credentials', icon: '🔑' },
+  { to: '/automation/workflows', label: 'Workflows', icon: '⟳' },
+  { to: '/automation/schedules', label: 'Schedules', icon: '◷' },
+  { to: '/automation/credentials', label: 'Credentials', icon: '⚿' },
 ];
 
 // Section: Admin (admin only) - includes Scripts
 const adminItems = [
-  { to: '/admin/users', label: 'Users', icon: '👥' },
-  { to: '/admin/system', label: 'System', icon: '⚙️' },
-  { to: '/automation/scripts', label: 'Scripts', icon: '🐍' },
-  { to: '/admin/logs', label: 'Logs', icon: '📋' },
+  { to: '/admin/users', label: 'Users', icon: '●●' },
+  { to: '/admin/system', label: 'System', icon: '⚙' },
+  { to: '/automation/scripts', label: 'Scripts', icon: '§' },
+  { to: '/admin/logs', label: 'Logs', icon: '≡' },
 ];
 
 // Reusable NavLink component

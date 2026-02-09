@@ -115,7 +115,7 @@ export default function Landing() {
             <img
               src="/hive.png"
               alt="Hive"
-              className="w-48 h-48 md:w-64 md:h-64 mx-auto drop-shadow-[0_0_50px_rgba(64,64,224,0.4)]"
+              className="w-48 h-48 md:w-64 md:h-64 mx-auto drop-shadow-[0_0_60px_rgba(64,64,224,0.6)] drop-shadow-[0_0_120px_rgba(64,64,224,0.3)]"
             />
           </div>
 
