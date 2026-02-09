@@ -87,7 +87,7 @@ export function Layout() {
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
-      <aside className="w-64 bg-[#1e3a3a] text-white flex flex-col">
+      <aside className="w-64 bg-black text-white flex flex-col">
         <div className="p-4 border-b border-white/10">
           <img src="/hive.png" alt="Hive" className="w-full max-w-[200px] mx-auto mb-3" />
           <p className="text-sm text-white/70 text-center">{user?.email}</p>
