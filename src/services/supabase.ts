@@ -282,7 +282,7 @@ export class SupabaseService {
         throw new Error('Failed to list tables');
       }
 
-      const openapi = await response.json();
+      const openapi: any = await response.json();
       const tables = Object.keys(openapi.paths || {})
         .map(path => path.replace('/', ''))
         .filter(name => name && !name.startsWith('rpc/'));
@@ -322,7 +322,7 @@ export class SupabaseService {
         throw new Error('Failed to describe table');
       }
 
-      const openapi = await response.json();
+      const openapi: any = await response.json();
       const tableSchema = openapi.definitions?.[tableName];
 
       if (!tableSchema?.properties) {
@@ -426,8 +426,8 @@ export class SupabaseService {
  */
 export function createSupabaseService(config: SupabaseConfig): SupabaseService {
   return new SupabaseService({
-    maxRowsPerQuery: 1000,
-    queryTimeoutMs: 30000,
-    ...config
+    ...config,
+    maxRowsPerQuery: config.maxRowsPerQuery ?? 1000,
+    queryTimeoutMs: config.queryTimeoutMs ?? 30000
   });
 }

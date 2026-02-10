@@ -428,7 +428,7 @@ export function createAdminRoutes(db: IDatabase): Router {
    */
   router.get('/presets/:id', async (req: Request, res: Response) => {
     try {
-      const preset = await presetsService.getById(req.params.id);
+      const preset = await presetsService.getById(req.params.id as string);
       if (!preset) {
         res.status(404).json({ error: 'Preset not found' });
         return;
@@ -498,7 +498,7 @@ export function createAdminRoutes(db: IDatabase): Router {
     try {
       const { name, label, description, sql, parameters, outputSchema, isActive } = req.body;
 
-      const preset = await presetsService.update(req.params.id, {
+      const preset = await presetsService.update(req.params.id as string, {
         name,
         label,
         description,
@@ -529,7 +529,7 @@ export function createAdminRoutes(db: IDatabase): Router {
    */
   router.delete('/presets/:id', async (req: Request, res: Response) => {
     try {
-      await presetsService.delete(req.params.id);
+      await presetsService.delete(req.params.id as string);
       res.json({ success: true });
     } catch (error: any) {
       console.error('[Admin] Delete preset error:', error.message);
@@ -543,7 +543,7 @@ export function createAdminRoutes(db: IDatabase): Router {
    */
   router.post('/presets/:id/toggle', async (req: Request, res: Response) => {
     try {
-      const preset = await presetsService.toggleActive(req.params.id);
+      const preset = await presetsService.toggleActive(req.params.id as string);
       res.json({ id: preset.id, isActive: preset.isActive });
     } catch (error: any) {
       console.error('[Admin] Toggle preset error:', error.message);
