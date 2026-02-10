@@ -1,5 +1,22 @@
 import { useState, useEffect } from 'react';
 import { workflows, scripts, skills, credentials, channelIdentities, tools, WorkflowInfo, WorkflowRunResult, WorkflowRunInfo, ScriptInfo, SkillInfo, CredentialInfo, ChannelIdentityInfo, ToolInfo } from '../api';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // Types for action registry and templates
 interface UserInputSchema {
@@ -85,6 +102,49 @@ function newStepId() {
   return `step${stepCounter}`;
 }
 
+// Sortable step wrapper for drag-and-drop reordering
+function SortableStep({
+  step,
+  children
+}: {
+  step: StepDef;
+  children: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: step.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <div className="flex items-start gap-2">
+        {/* Drag handle */}
+        <button
+          type="button"
+          {...listeners}
+          className="mt-4 px-1 py-2 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing"
+          title="Drag to reorder"
+        >
+          ⋮⋮
+        </button>
+        <div className="flex-1">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function WorkflowsPage() {
   const [workflowList, setWorkflowList] = useState<WorkflowInfo[]>([]);
   const [scriptList, setScriptList] = useState<ScriptInfo[]>([]);
@@ -118,6 +178,25 @@ export default function WorkflowsPage() {
   // Step picker state
   const [showStepPicker, setShowStepPicker] = useState(false);
   const [stepPickerCategory, setStepPickerCategory] = useState<string | null>(null);
+
+  // Drag-and-drop sensors for step reordering
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setForm(f => {
+        const oldIndex = f.steps.findIndex(s => s.id === active.id);
+        const newIndex = f.steps.findIndex(s => s.id === over.id);
+        return { ...f, steps: arrayMove(f.steps, oldIndex, newIndex) };
+      });
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -793,28 +872,38 @@ export default function WorkflowsPage() {
               {form.steps.length === 0 && (
                 <p className="text-sm text-gray-400 mb-2">No steps yet. Add a script, skill, or notify step below.</p>
               )}
-              <div className="space-y-3">
-                {form.steps.map((step, idx) => (
-                  <div key={step.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono bg-gray-200 px-2 py-0.5 rounded">{step.id}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          step.type === 'script' ? 'bg-blue-100 text-blue-700' :
-                          step.type === 'notify' ? 'bg-green-100 text-green-700' :
-                          step.type === 'tool' ? 'bg-amber-100 text-amber-700' :
-                          'bg-purple-100 text-purple-700'
-                        }`}>
-                          {step.type}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => removeStep(idx)}
-                        className="text-xs text-gray-400 hover:text-red-600"
-                      >
-                        Remove
-                      </button>
-                    </div>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={form.steps.map(s => s.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-3">
+                    {form.steps.map((step, idx) => (
+                      <SortableStep key={step.id} step={step}>
+                        <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono bg-gray-200 px-2 py-0.5 rounded">{step.id}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                step.type === 'script' ? 'bg-blue-100 text-blue-700' :
+                                step.type === 'notify' ? 'bg-green-100 text-green-700' :
+                                step.type === 'tool' ? 'bg-amber-100 text-amber-700' :
+                                'bg-purple-100 text-purple-700'
+                              }`}>
+                                {step.type}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => removeStep(idx)}
+                              className="text-xs text-gray-400 hover:text-red-600"
+                            >
+                              Remove
+                            </button>
+                          </div>
 
                     {/* Step target */}
                     {step.type === 'script' && (
@@ -1075,10 +1164,13 @@ export default function WorkflowsPage() {
                       >
                         + Add input
                       </button>
-                    </div>
+                          </div>
+                        </div>
+                      </SortableStep>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </SortableContext>
+              </DndContext>
 
               {/* Categorized Step Picker */}
               <div className="relative mt-3">
