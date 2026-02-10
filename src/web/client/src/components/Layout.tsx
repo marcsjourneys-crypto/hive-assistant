@@ -39,6 +39,7 @@ const automationItems = [
 const adminItems = [
   { to: '/admin/users', label: 'Users', icon: '●●' },
   { to: '/admin/system', label: 'System', icon: '⚙' },
+  { to: '/admin/presets', label: 'Query Presets', icon: '▤' },
   { to: '/automation/scripts', label: 'Scripts', icon: '§' },
   { to: '/admin/logs', label: 'Logs', icon: '≡' },
 ];

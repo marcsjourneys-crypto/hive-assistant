@@ -296,6 +296,39 @@ export interface SupabaseDatabaseInfo {
   queryTimeoutMs: number;
 }
 
+// Query Presets
+export interface QueryPreset {
+  id: string;
+  name: string;
+  label: string;
+  description: string;
+  sql: string;
+  parameters: Record<string, unknown>;
+  outputSchema: Array<{ name: string; type: string }>;
+  isActive: boolean;
+  databaseName: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePresetInput {
+  name: string;
+  label: string;
+  description?: string;
+  sql: string;
+  databaseName?: string;
+}
+
+export interface UpdatePresetInput {
+  name?: string;
+  label?: string;
+  description?: string;
+  sql?: string;
+  databaseName?: string;
+  isActive?: boolean;
+}
+
 export const admin = {
   users: () => request<AdminUser[]>('/admin/users'),
   setRole: (userId: string, isAdmin: boolean) =>
@@ -347,6 +380,24 @@ export const admin = {
     request<{ ok: boolean; name: string; tables?: string[]; tableCount?: number; durationMs?: number; error?: string }>(`/admin/supabase/databases/${name}/test`, {
       method: 'POST',
     }),
+
+  // Query Presets CRUD
+  listPresets: () => request<QueryPreset[]>('/admin/presets'),
+  getPreset: (id: string) => request<QueryPreset>(`/admin/presets/${id}`),
+  createPreset: (data: CreatePresetInput) =>
+    request<QueryPreset>('/admin/presets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updatePreset: (id: string, data: UpdatePresetInput) =>
+    request<QueryPreset>(`/admin/presets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deletePreset: (id: string) =>
+    request<{ success: boolean }>(`/admin/presets/${id}`, { method: 'DELETE' }),
+  togglePreset: (id: string) =>
+    request<{ id: string; isActive: boolean }>(`/admin/presets/${id}/toggle`, { method: 'POST' }),
 };
 
 // Chat

@@ -24,6 +24,7 @@ import IntegrationsPage from './pages/Integrations';
 import Users from './pages/admin/Users';
 import System from './pages/admin/System';
 import Logs from './pages/admin/Logs';
+import QueryPresets from './pages/admin/QueryPresets';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -70,6 +71,7 @@ export default function App() {
 
         <Route path="admin/users" element={<AdminRoute><Users /></AdminRoute>} />
         <Route path="admin/system" element={<AdminRoute><System /></AdminRoute>} />
+        <Route path="admin/presets" element={<AdminRoute><QueryPresets /></AdminRoute>} />
         <Route path="admin/logs" element={<AdminRoute><Logs /></AdminRoute>} />
       </Route>
 
