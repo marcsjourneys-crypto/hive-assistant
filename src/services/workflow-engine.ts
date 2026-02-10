@@ -111,7 +111,7 @@ export class WorkflowEngine {
         if (step.type === 'script') {
           output = await this.executeScriptStep(step, resolvedInputs, userId);
         } else if (step.type === 'skill') {
-          output = await this.executeSkillStep(step, resolvedInputs, userId);
+          output = await this.executeSkillStep(step, resolvedInputs, userId, stepOutputs);
         } else if (step.type === 'notify') {
           output = await this.executeNotifyStep(step, resolvedInputs, userId, stepOutputs);
         } else if (step.type === 'tool') {
@@ -291,11 +291,16 @@ export class WorkflowEngine {
   /**
    * Execute a skill step by routing through Gateway.handleMessage.
    * This preserves the full orchestrator pipeline (model selection, context building, etc.).
+   *
+   * All previous step outputs are automatically injected as context so the skill
+   * can reference data from tool steps (calendar events, emails, etc.) without
+   * requiring explicit input references.
    */
   private async executeSkillStep(
     step: StepDefinition,
     inputs: Record<string, unknown>,
-    userId: string
+    userId: string,
+    stepOutputs: Map<string, unknown>
   ): Promise<unknown> {
     if (!this.gateway) {
       throw new Error('Gateway not available for skill steps');
@@ -310,15 +315,34 @@ export class WorkflowEngine {
       .map(([k, v]) => `${k}:\n${this.formatInputValue(v)}`)
       .join('\n\n');
 
+    // Auto-inject all previous step outputs as context
+    // This ensures skill steps can see data from tool steps (calendar, email, etc.)
+    // without requiring explicit input references
+    const previousStepData: string[] = [];
+    for (const [stepId, output] of stepOutputs.entries()) {
+      // Skip if this output was already explicitly referenced in inputs
+      const isExplicitlyReferenced = Object.values(inputs).some(
+        v => v === output || (typeof v === 'object' && v !== null && JSON.stringify(v) === JSON.stringify(output))
+      );
+      if (!isExplicitlyReferenced && output != null) {
+        previousStepData.push(`[${stepId}]:\n${this.formatInputValue(output)}`);
+      }
+    }
+
+    // Combine explicit inputs and auto-injected step outputs
+    const allContext = [
+      ...(otherInputs ? [otherInputs] : []),
+      ...(previousStepData.length > 0 ? [`--- Data from previous workflow steps ---\n\n${previousStepData.join('\n\n')}`] : [])
+    ].join('\n\n');
+
     if (typeof inputs.message === 'string') {
-      message = otherInputs
-        ? `${inputs.message}\n\n${otherInputs}`
+      message = allContext
+        ? `${inputs.message}\n\n${allContext}`
         : inputs.message;
+    } else if (allContext) {
+      message = `Process the following workflow data:\n\n${allContext}`;
     } else {
-      const allInputs = Object.entries(inputs)
-        .map(([k, v]) => `${k}:\n${this.formatInputValue(v)}`)
-        .join('\n\n');
-      message = `Process the following data:\n\n${allInputs}`;
+      message = 'Process this workflow step.';
     }
 
     const handleOptions: { forceSkill?: string; tools?: string[] } = {};
