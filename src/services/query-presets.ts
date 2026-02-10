@@ -18,6 +18,7 @@ export interface CreatePresetInput {
   parameters?: Record<string, ParameterDefinition>;
   outputSchema?: OutputField[];
   createdBy: string;
+  databaseName?: string;  // Which Supabase database this preset targets
 }
 
 /** Definition of a parameter that can be passed to a preset. */
@@ -45,6 +46,7 @@ export interface UpdatePresetInput {
   parameters?: Record<string, ParameterDefinition>;
   outputSchema?: OutputField[];
   isActive?: boolean;
+  databaseName?: string;
 }
 
 /**
@@ -112,7 +114,8 @@ export class QueryPresetsService {
       parametersJson: JSON.stringify(input.parameters || {}),
       outputSchemaJson: JSON.stringify(input.outputSchema || []),
       isActive: true,
-      createdBy: input.createdBy
+      createdBy: input.createdBy,
+      databaseName: input.databaseName || 'default'
     };
 
     return this.db.createQueryPreset(preset);
@@ -152,6 +155,7 @@ export class QueryPresetsService {
     if (input.parameters !== undefined) updates.parametersJson = JSON.stringify(input.parameters);
     if (input.outputSchema !== undefined) updates.outputSchemaJson = JSON.stringify(input.outputSchema);
     if (input.isActive !== undefined) updates.isActive = input.isActive;
+    if (input.databaseName !== undefined) updates.databaseName = input.databaseName;
 
     return this.db.updateQueryPreset(id, updates);
   }

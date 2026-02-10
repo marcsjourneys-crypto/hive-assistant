@@ -6,7 +6,7 @@ import type { Database } from '../db/interface';
 import type { ScriptRunner } from '../services/script-runner';
 import type { GoogleCalendarService } from '../services/google-calendar';
 import type { GmailService } from '../services/gmail';
-import type { SupabaseService } from '../services/supabase';
+import type { SupabaseService, SupabaseConnectionManager } from '../services/supabase';
 import { getConfig } from '../utils/config';
 
 const dnsLookup = promisify(dns.lookup);
@@ -1220,7 +1220,7 @@ function createContactsTool(userId: string, db: Database): ToolDefinition {
 /** Metadata for the manage_database tool. */
 const MANAGE_DATABASE_META = {
   name: 'manage_database',
-  description: 'Query a connected Supabase database. Supports listing tables, describing table schemas, executing read-only SQL queries, and running pre-built query presets. All queries are SELECT-only for safety.'
+  description: 'Query connected Supabase databases. Supports listing available databases, tables, describing table schemas, executing read-only SQL queries, and running pre-built query presets. All queries are SELECT-only for safety.'
 };
 
 /** Schema for the manage_database tool. */
@@ -1229,8 +1229,12 @@ const MANAGE_DATABASE_SCHEMA: Record<string, unknown> = {
   properties: {
     action: {
       type: 'string',
-      enum: ['list_tables', 'describe_table', 'query', 'run_preset', 'list_presets'],
-      description: 'The action to perform: list available tables, describe a table schema, execute a SELECT query, run a saved preset query, or list available presets.'
+      enum: ['list_databases', 'list_tables', 'describe_table', 'query', 'run_preset', 'list_presets'],
+      description: 'The action to perform: list available database connections, list tables, describe a table schema, execute a SELECT query, run a saved preset query, or list available presets.'
+    },
+    database: {
+      type: 'string',
+      description: 'Database connection name (e.g., "sales_db"). Omit to use the default database.'
     },
     table: {
       type: 'string',
@@ -1253,31 +1257,63 @@ const MANAGE_DATABASE_SCHEMA: Record<string, unknown> = {
 };
 
 /** Create a manage_database tool instance. */
-function createDatabaseTool(db: Database, supabase: SupabaseService): ToolDefinition {
+function createDatabaseTool(db: Database, connectionManager: SupabaseConnectionManager): ToolDefinition {
   return {
     name: MANAGE_DATABASE_META.name,
     description: MANAGE_DATABASE_META.description,
     input_schema: MANAGE_DATABASE_SCHEMA,
     handler: async (input: {
-      action: 'list_tables' | 'describe_table' | 'query' | 'run_preset' | 'list_presets';
+      action: 'list_databases' | 'list_tables' | 'describe_table' | 'query' | 'run_preset' | 'list_presets';
+      database?: string;
       table?: string;
       sql?: string;
       presetName?: string;
       parameters?: Record<string, unknown>;
     }) => {
       try {
+        // Helper to get a database connection
+        const getConnection = (dbName?: string) => {
+          const conn = connectionManager.get(dbName);
+          if (!conn) {
+            const available = connectionManager.listDatabases();
+            throw new Error(
+              dbName
+                ? `Database "${dbName}" not found. Available: ${available.join(', ') || 'none'}`
+                : `No default database configured. Available: ${available.join(', ') || 'none'}`
+            );
+          }
+          return conn;
+        };
+
         switch (input.action) {
+          case 'list_databases': {
+            const databases = connectionManager.listDatabases();
+            const defaultDb = connectionManager.getDefaultName();
+            return {
+              databases,
+              default: defaultDb,
+              total: databases.length
+            };
+          }
+
           case 'list_tables': {
+            const supabase = getConnection(input.database);
             const tables = await supabase.listTables();
-            return { tables, total: tables.length };
+            return {
+              database: input.database || connectionManager.getDefaultName(),
+              tables,
+              total: tables.length
+            };
           }
 
           case 'describe_table': {
             if (!input.table) {
               return { error: 'table is required for "describe_table" action.' };
             }
+            const supabase = getConnection(input.database);
             const columns = await supabase.describeTable(input.table);
             return {
+              database: input.database || connectionManager.getDefaultName(),
               table: input.table,
               columns,
               total: columns.length
@@ -1288,8 +1324,10 @@ function createDatabaseTool(db: Database, supabase: SupabaseService): ToolDefini
             if (!input.sql) {
               return { error: 'sql is required for "query" action.' };
             }
+            const supabase = getConnection(input.database);
             const result = await supabase.query(input.sql);
             return {
+              database: input.database || connectionManager.getDefaultName(),
               rows: result.rows,
               count: result.count,
               truncated: result.truncated
@@ -1307,7 +1345,7 @@ function createDatabaseTool(db: Database, supabase: SupabaseService): ToolDefini
               const available = await db.getActiveQueryPresets();
               return {
                 error: `Preset "${input.presetName}" not found.`,
-                available_presets: available.map(p => ({ name: p.name, label: p.label, description: p.description }))
+                available_presets: available.map(p => ({ name: p.name, label: p.label, description: p.description, database: p.databaseName }))
               };
             }
 
@@ -1315,11 +1353,13 @@ function createDatabaseTool(db: Database, supabase: SupabaseService): ToolDefini
               return { error: `Preset "${input.presetName}" is not active.` };
             }
 
+            // Use preset's database or override with input.database
+            const targetDb = input.database || preset.databaseName || 'default';
+            const supabase = getConnection(targetDb);
+
             // Substitute parameters into SQL if provided
             let sql = preset.sql;
             if (input.parameters) {
-              // Parse the preset's parameter schema
-              const paramSchema = JSON.parse(preset.parametersJson || '{}');
               for (const [key, value] of Object.entries(input.parameters)) {
                 // Simple parameter substitution: replace {{key}} with value
                 const placeholder = `{{${key}}}`;
@@ -1332,6 +1372,7 @@ function createDatabaseTool(db: Database, supabase: SupabaseService): ToolDefini
             return {
               preset: preset.name,
               label: preset.label,
+              database: targetDb,
               rows: result.rows,
               count: result.count,
               truncated: result.truncated
@@ -1345,6 +1386,7 @@ function createDatabaseTool(db: Database, supabase: SupabaseService): ToolDefini
                 name: p.name,
                 label: p.label,
                 description: p.description,
+                database: p.databaseName,
                 parameters: JSON.parse(p.parametersJson || '{}')
               })),
               total: presets.length
@@ -1352,7 +1394,7 @@ function createDatabaseTool(db: Database, supabase: SupabaseService): ToolDefini
           }
 
           default:
-            return { error: `Unknown action: ${input.action}. Use list_tables, describe_table, query, run_preset, or list_presets.` };
+            return { error: `Unknown action: ${input.action}. Use list_databases, list_tables, describe_table, query, run_preset, or list_presets.` };
         }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1380,7 +1422,7 @@ export interface ToolContext {
   scriptRunner?: ScriptRunner;
   googleCalendar?: GoogleCalendarService;
   gmail?: GmailService;
-  supabase?: SupabaseService;
+  supabase?: SupabaseConnectionManager;
 }
 
 /**

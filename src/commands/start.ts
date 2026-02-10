@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getConfig, getApiKey } from '../utils/config';
+import { getConfig, getApiKey, getSupabaseDatabases } from '../utils/config';
 import { getDatabase } from '../db/interface';
 import { createOrchestrator } from '../core/orchestrator';
 import { Executor } from '../core/executor';
@@ -28,6 +28,7 @@ import { GoogleAuthManager } from '../services/google-auth';
 import { GoogleCalendarService } from '../services/google-calendar';
 import { GmailService } from '../services/gmail';
 import { seedBuiltinScripts } from '../services/seed-scripts';
+import { createSupabaseConnectionManager } from '../services/supabase';
 
 interface StartOptions {
   daemon?: boolean;
@@ -137,6 +138,12 @@ export async function startCommand(options: StartOptions): Promise<void> {
       ? new GmailService(googleAuth)
       : undefined;
 
+    // 7g. Create Supabase connection manager (if any databases are configured)
+    const supabaseDatabases = getSupabaseDatabases();
+    const supabaseManager = Object.keys(supabaseDatabases).length > 0
+      ? createSupabaseConnectionManager(supabaseDatabases)
+      : undefined;
+
     // 8. Create gateway
     const gateway = new Gateway({
       db,
@@ -150,7 +157,8 @@ export async function startCommand(options: StartOptions): Promise<void> {
       fileAccess,
       scriptRunner,
       googleCalendar,
-      gmail
+      gmail,
+      supabase: supabaseManager
     });
 
     // 8b. Create notification sender (for workflow notify steps)
@@ -160,7 +168,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
     // 8c. Create workflow engine (requires gateway for skill steps, vault for credential inputs)
     const workflowEngine = new WorkflowEngine(
       scriptRunner, gateway, db, credentialVault, notificationSender,
-      googleCalendar, gmail
+      googleCalendar, gmail, supabaseManager
     );
 
     // 8d. Create workflow trigger service (natural language workflow triggering)

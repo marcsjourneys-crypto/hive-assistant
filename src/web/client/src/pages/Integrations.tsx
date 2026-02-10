@@ -1,8 +1,15 @@
 import { useState, useEffect } from 'react';
-import { integrations, admin } from '../api';
+import { integrations, admin, SupabaseDatabaseInfo } from '../api';
 
 // Version tag for debugging deployment issues
-const BUILD_VERSION = '2026-02-09-supabase-v1';
+const BUILD_VERSION = '2026-02-09-multidb-v1';
+
+interface DatabaseFormState {
+  name: string;
+  url: string;
+  anonKey: string;
+  isEditing: boolean;
+}
 
 export default function IntegrationsPage() {
   const [googleConnected, setGoogleConnected] = useState(false);
@@ -11,18 +18,14 @@ export default function IntegrationsPage() {
   const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Supabase state
+  // Supabase state - multi-database
   const [isAdmin, setIsAdmin] = useState(false);
-  const [supabaseConfig, setSupabaseConfig] = useState({
-    hasUrl: false,
-    hasAnonKey: false,
-    maxRowsPerQuery: 1000,
-    queryTimeoutMs: 30000
-  });
-  const [supabaseForm, setSupabaseForm] = useState({ url: '', anonKey: '' });
-  const [supabaseTesting, setSupabaseTesting] = useState(false);
-  const [supabaseSaving, setSupabaseSaving] = useState(false);
-  const [supabaseTestResult, setSupabaseTestResult] = useState<{ ok: boolean; tables?: string[]; error?: string } | null>(null);
+  const [databases, setDatabases] = useState<SupabaseDatabaseInfo[]>([]);
+  const [dbForm, setDbForm] = useState<DatabaseFormState>({ name: '', url: '', anonKey: '', isEditing: false });
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [dbSaving, setDbSaving] = useState(false);
+  const [testingDb, setTestingDb] = useState<string | null>(null);
+  const [dbTestResults, setDbTestResults] = useState<Record<string, { ok: boolean; tables?: string[]; error?: string }>>({});
 
   useEffect(() => {
     console.log('[Integrations] BUILD_VERSION:', BUILD_VERSION);
@@ -46,23 +49,23 @@ export default function IntegrationsPage() {
       // Google may not be configured — show as disconnected
     }
 
-    // Load Supabase config for admins
+    // Load Supabase databases for admins
     try {
-      console.log('[Integrations] Calling admin.getSystem()...');
-      const systemConfig = await admin.getSystem();
-      console.log('[Integrations] admin.getSystem() success, supabase config:', systemConfig.supabase);
+      console.log('[Integrations] Calling admin.listSupabaseDatabases()...');
+      const dbList = await admin.listSupabaseDatabases();
+      console.log('[Integrations] listSupabaseDatabases success:', dbList);
       setIsAdmin(true);
-      if (systemConfig.supabase) {
-        setSupabaseConfig({
-          hasUrl: systemConfig.supabase.hasUrl || false,
-          hasAnonKey: systemConfig.supabase.hasAnonKey || false,
-          maxRowsPerQuery: systemConfig.supabase.maxRowsPerQuery || 1000,
-          queryTimeoutMs: systemConfig.supabase.queryTimeoutMs || 30000
-        });
-      }
+      setDatabases(dbList);
     } catch (err) {
-      console.log('[Integrations] admin.getSystem() failed:', err);
-      setIsAdmin(false);
+      console.log('[Integrations] listSupabaseDatabases failed:', err);
+      // Fallback: try getSystem to check if user is admin
+      try {
+        await admin.getSystem();
+        setIsAdmin(true);
+        setDatabases([]);
+      } catch {
+        setIsAdmin(false);
+      }
     }
 
     setLoading(false);
@@ -225,138 +228,220 @@ export default function IntegrationsPage() {
           )}
         </div>
 
-        {/* Supabase Database (Admin only) */}
+        {/* Supabase Databases (Admin only) */}
         {isAdmin && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 mb-1">
-                  <h3 className="text-lg font-semibold">Supabase Database</h3>
+                  <h3 className="text-lg font-semibold">Supabase Databases</h3>
                   <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-                    supabaseConfig.hasUrl && supabaseConfig.hasAnonKey
+                    databases.length > 0
                       ? 'bg-green-100 text-green-700'
                       : 'bg-gray-100 text-gray-500'
                   }`}>
-                    {supabaseConfig.hasUrl && supabaseConfig.hasAnonKey ? 'Configured' : 'Not configured'}
+                    {databases.length > 0 ? `${databases.length} configured` : 'Not configured'}
                   </span>
                   <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
                     Admin
                   </span>
                 </div>
                 <p className="text-sm text-gray-500">
-                  Connect a Supabase database for data queries in workflows and chat.
-                  Users can run preset queries or ask natural language questions about your data.
+                  Connect Supabase databases for data queries in workflows and chat.
+                  You can configure multiple databases (e.g., sales_db, inventory_db).
                 </p>
               </div>
+              {!showAddForm && (
+                <button
+                  onClick={() => {
+                    setDbForm({ name: '', url: '', anonKey: '', isEditing: false });
+                    setShowAddForm(true);
+                  }}
+                  className="px-4 py-2 text-sm text-white bg-hive-500 rounded-lg hover:bg-hive-600"
+                >
+                  Add Database
+                </button>
+              )}
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Supabase URL
-                </label>
-                <input
-                  type="text"
-                  placeholder="https://xxx.supabase.co"
-                  value={supabaseForm.url}
-                  onChange={(e) => setSupabaseForm(prev => ({ ...prev, url: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-hive-500 focus:border-hive-500"
-                />
+            {/* Database list */}
+            {databases.length > 0 && (
+              <div className="space-y-3 mb-4">
+                {databases.map((db) => (
+                  <div key={db.name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <span className={`w-2 h-2 rounded-full ${db.hasUrl && db.hasAnonKey ? 'bg-green-500' : 'bg-gray-300'}`} />
+                      <div>
+                        <span className="font-medium text-sm">{db.name}</span>
+                        {db.name === 'default' && (
+                          <span className="ml-2 text-xs text-gray-400">(default)</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {dbTestResults[db.name] && (
+                        <span className={`text-xs ${dbTestResults[db.name].ok ? 'text-green-600' : 'text-red-600'}`}>
+                          {dbTestResults[db.name].ok ? `${dbTestResults[db.name].tables?.length || 0} tables` : 'Failed'}
+                        </span>
+                      )}
+                      <button
+                        onClick={async () => {
+                          setTestingDb(db.name);
+                          try {
+                            const result = await admin.testSupabaseDatabase(db.name);
+                            setDbTestResults(prev => ({ ...prev, [db.name]: result }));
+                          } catch (err: any) {
+                            setDbTestResults(prev => ({ ...prev, [db.name]: { ok: false, error: err.message } }));
+                          } finally {
+                            setTestingDb(null);
+                          }
+                        }}
+                        disabled={testingDb === db.name}
+                        className="px-2 py-1 text-xs text-gray-600 hover:text-gray-800"
+                      >
+                        {testingDb === db.name ? 'Testing...' : 'Test'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDbForm({ name: db.name, url: '', anonKey: '', isEditing: true });
+                          setShowAddForm(true);
+                        }}
+                        className="px-2 py-1 text-xs text-gray-600 hover:text-gray-800"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete database "${db.name}"?`)) return;
+                          try {
+                            await admin.deleteSupabaseDatabase(db.name);
+                            setDatabases(prev => prev.filter(d => d.name !== db.name));
+                            setMessage({ type: 'success', text: `Database "${db.name}" deleted.` });
+                          } catch (err: any) {
+                            setMessage({ type: 'error', text: err.message });
+                          }
+                        }}
+                        className="px-2 py-1 text-xs text-red-600 hover:text-red-800"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
+            )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Anon Key (public read-only)
-                </label>
-                <input
-                  type="password"
-                  placeholder="eyJ..."
-                  value={supabaseForm.anonKey}
-                  onChange={(e) => setSupabaseForm(prev => ({ ...prev, anonKey: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-hive-500 focus:border-hive-500"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  Use your Supabase anon key for read-only access. Never use the service role key here.
-                </p>
-              </div>
+            {/* Add/Edit form */}
+            {showAddForm && (
+              <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+                <h4 className="font-medium text-sm">
+                  {dbForm.isEditing ? `Update "${dbForm.name}"` : 'Add New Database'}
+                </h4>
 
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={async () => {
-                    setSupabaseSaving(true);
-                    setSupabaseTestResult(null);
-                    try {
-                      await admin.updateSupabase({
-                        url: supabaseForm.url || undefined,
-                        anonKey: supabaseForm.anonKey || undefined
-                      });
-                      setMessage({ type: 'success', text: 'Supabase configuration saved!' });
-                      setSupabaseConfig(prev => ({
-                        ...prev,
-                        hasUrl: !!supabaseForm.url || prev.hasUrl,
-                        hasAnonKey: !!supabaseForm.anonKey || prev.hasAnonKey
-                      }));
-                      setSupabaseForm({ url: '', anonKey: '' });
-                    } catch (err: any) {
-                      setMessage({ type: 'error', text: err.message || 'Failed to save Supabase config' });
-                    } finally {
-                      setSupabaseSaving(false);
-                    }
-                  }}
-                  disabled={supabaseSaving || (!supabaseForm.url && !supabaseForm.anonKey)}
-                  className="px-4 py-2 text-sm text-white bg-hive-500 rounded-lg hover:bg-hive-600 disabled:opacity-50"
-                >
-                  {supabaseSaving ? 'Saving...' : 'Save'}
-                </button>
+                {!dbForm.isEditing && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Database Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g., sales_db"
+                      value={dbForm.name}
+                      onChange={(e) => setDbForm(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-hive-500 focus:border-hive-500"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      Use lowercase letters, numbers, and underscores only.
+                    </p>
+                  </div>
+                )}
 
-                <button
-                  onClick={async () => {
-                    setSupabaseTesting(true);
-                    setSupabaseTestResult(null);
-                    try {
-                      const result = await admin.testSupabase();
-                      setSupabaseTestResult(result);
-                    } catch (err: any) {
-                      setSupabaseTestResult({ ok: false, error: err.message });
-                    } finally {
-                      setSupabaseTesting(false);
-                    }
-                  }}
-                  disabled={supabaseTesting || !(supabaseConfig.hasUrl && supabaseConfig.hasAnonKey)}
-                  className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-                >
-                  {supabaseTesting ? 'Testing...' : 'Test Connection'}
-                </button>
-              </div>
-
-              {supabaseTestResult && (
-                <div className={`p-3 rounded-lg text-sm ${
-                  supabaseTestResult.ok
-                    ? 'bg-green-50 text-green-800 border border-green-200'
-                    : 'bg-red-50 text-red-800 border border-red-200'
-                }`}>
-                  {supabaseTestResult.ok ? (
-                    <>
-                      <p className="font-medium">Connection successful!</p>
-                      <p className="text-xs mt-1">
-                        Found {supabaseTestResult.tables?.length || 0} tables: {supabaseTestResult.tables?.slice(0, 5).join(', ')}
-                        {(supabaseTestResult.tables?.length || 0) > 5 && '...'}
-                      </p>
-                    </>
-                  ) : (
-                    <p>{supabaseTestResult.error}</p>
-                  )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Supabase URL
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="https://xxx.supabase.co"
+                    value={dbForm.url}
+                    onChange={(e) => setDbForm(prev => ({ ...prev, url: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-hive-500 focus:border-hive-500"
+                  />
                 </div>
-              )}
 
-              {supabaseConfig.hasUrl && supabaseConfig.hasAnonKey && (
-                <p className="text-xs text-gray-400">
-                  Your assistant can use the{' '}
-                  <code className="bg-gray-100 px-1 rounded">manage_database</code>{' '}
-                  tool to query your Supabase data. Create query presets in the admin panel for common reports.
-                </p>
-              )}
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Anon Key (public read-only)
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="eyJ..."
+                    value={dbForm.anonKey}
+                    onChange={(e) => setDbForm(prev => ({ ...prev, anonKey: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-hive-500 focus:border-hive-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Use your Supabase anon key for read-only access. Never use the service role key here.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={async () => {
+                      if (!dbForm.isEditing && !dbForm.name) {
+                        setMessage({ type: 'error', text: 'Database name is required' });
+                        return;
+                      }
+                      if (!dbForm.url && !dbForm.anonKey) {
+                        setMessage({ type: 'error', text: 'URL or anon key is required' });
+                        return;
+                      }
+
+                      setDbSaving(true);
+                      try {
+                        await admin.updateSupabaseDatabase(dbForm.name, {
+                          url: dbForm.url || undefined,
+                          anonKey: dbForm.anonKey || undefined
+                        });
+                        setMessage({ type: 'success', text: `Database "${dbForm.name}" saved!` });
+
+                        // Refresh database list
+                        const dbList = await admin.listSupabaseDatabases();
+                        setDatabases(dbList);
+
+                        setShowAddForm(false);
+                        setDbForm({ name: '', url: '', anonKey: '', isEditing: false });
+                      } catch (err: any) {
+                        setMessage({ type: 'error', text: err.message || 'Failed to save database' });
+                      } finally {
+                        setDbSaving(false);
+                      }
+                    }}
+                    disabled={dbSaving}
+                    className="px-4 py-2 text-sm text-white bg-hive-500 rounded-lg hover:bg-hive-600 disabled:opacity-50"
+                  >
+                    {dbSaving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAddForm(false);
+                      setDbForm({ name: '', url: '', anonKey: '', isEditing: false });
+                    }}
+                    className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {databases.length > 0 && !showAddForm && (
+              <p className="text-xs text-gray-400 mt-4">
+                Your assistant can use the{' '}
+                <code className="bg-gray-100 px-1 rounded">manage_database</code>{' '}
+                tool to query your databases. Specify database name in queries or presets.
+              </p>
+            )}
           </div>
         )}
 

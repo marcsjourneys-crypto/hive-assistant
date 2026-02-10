@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { Database as IDatabase } from '../../db/interface';
 import { requireAuth, requireAdmin } from '../middleware/auth';
-import { getConfig, saveConfig } from '../../utils/config';
+import { getConfig, saveConfig, getSupabaseDatabases } from '../../utils/config';
 import { testOllamaConnection } from '../../core/orchestrator';
 import { QueryPresetsService } from '../../services/query-presets';
 import { createSupabaseService, SupabaseService } from '../../services/supabase';
@@ -161,13 +161,27 @@ export function createAdminRoutes(db: IDatabase): Router {
           hasClientId: !!config.google?.clientId,
           hasClientSecret: !!config.google?.clientSecret
         },
+        // Legacy single-database config (backward compat)
         supabase: {
           hasUrl: !!config.supabase?.url,
           hasAnonKey: !!config.supabase?.anonKey,
           enabledTables: config.supabase?.enabledTables || [],
           maxRowsPerQuery: config.supabase?.maxRowsPerQuery || 1000,
           queryTimeoutMs: config.supabase?.queryTimeoutMs || 30000
-        }
+        },
+        // Multi-database config
+        supabaseDatabases: Object.fromEntries(
+          Object.entries(getSupabaseDatabases()).map(([name, dbConfig]) => [
+            name,
+            {
+              hasUrl: !!dbConfig.url,
+              hasAnonKey: !!dbConfig.anonKey,
+              enabledTables: dbConfig.enabledTables || [],
+              maxRowsPerQuery: dbConfig.maxRowsPerQuery || 1000,
+              queryTimeoutMs: dbConfig.queryTimeoutMs || 30000
+            }
+          ])
+        )
       });
     } catch (error: any) {
       console.error('[Admin] System config error:', error.message);
@@ -377,6 +391,160 @@ export function createAdminRoutes(db: IDatabase): Router {
     }
   });
 
+  // ─── Multi-Database Management ──────────────────────────────────────────────
+
+  /**
+   * GET /api/admin/supabase/databases
+   * List all configured Supabase database connections.
+   */
+  router.get('/supabase/databases', (_req: Request, res: Response) => {
+    try {
+      const databases = getSupabaseDatabases();
+      const result = Object.entries(databases).map(([name, dbConfig]) => ({
+        name,
+        hasUrl: !!dbConfig.url,
+        hasAnonKey: !!dbConfig.anonKey,
+        enabledTables: dbConfig.enabledTables || [],
+        maxRowsPerQuery: dbConfig.maxRowsPerQuery || 1000,
+        queryTimeoutMs: dbConfig.queryTimeoutMs || 30000
+      }));
+      res.json(result);
+    } catch (error: any) {
+      console.error('[Admin] List databases error:', error.message);
+      res.status(500).json({ error: 'Failed to list databases' });
+    }
+  });
+
+  /**
+   * PUT /api/admin/supabase/databases/:name
+   * Add or update a named database connection.
+   */
+  router.put('/supabase/databases/:name', async (req: Request, res: Response) => {
+    try {
+      const name = req.params.name as string;
+      const { url, anonKey, enabledTables, maxRowsPerQuery, queryTimeoutMs } = req.body;
+
+      // Validate name format
+      if (!/^[a-z][a-z0-9_]*$/i.test(name)) {
+        res.status(400).json({ error: 'Database name must start with a letter and contain only letters, numbers, and underscores.' });
+        return;
+      }
+
+      const config = getConfig();
+
+      // Initialize supabaseDatabases if needed
+      if (!config.supabaseDatabases) {
+        config.supabaseDatabases = {};
+      }
+
+      // Create or update the database config
+      const dbConfig = config.supabaseDatabases[name] || { url: '', anonKey: '' };
+
+      if (url !== undefined) dbConfig.url = url;
+      if (anonKey !== undefined) dbConfig.anonKey = anonKey;
+      if (enabledTables !== undefined) dbConfig.enabledTables = enabledTables;
+      if (maxRowsPerQuery !== undefined) dbConfig.maxRowsPerQuery = maxRowsPerQuery;
+      if (queryTimeoutMs !== undefined) dbConfig.queryTimeoutMs = queryTimeoutMs;
+
+      // Test connection if URL and key are provided
+      if (dbConfig.url && dbConfig.anonKey) {
+        try {
+          const testService = createSupabaseService({
+            url: dbConfig.url,
+            anonKey: dbConfig.anonKey,
+            maxRowsPerQuery: dbConfig.maxRowsPerQuery || 1000,
+            queryTimeoutMs: dbConfig.queryTimeoutMs || 30000
+          });
+          const connected = await testService.testConnection();
+          if (!connected) {
+            res.status(400).json({ error: 'Failed to connect to Supabase. Check your URL and anon key.' });
+            return;
+          }
+        } catch (err: any) {
+          res.status(400).json({ error: `Connection test failed: ${err.message}` });
+          return;
+        }
+      }
+
+      config.supabaseDatabases[name] = dbConfig;
+      saveConfig(config);
+
+      res.json({ success: true, name });
+    } catch (error: any) {
+      console.error('[Admin] Update database error:', error.message);
+      res.status(500).json({ error: 'Failed to update database config' });
+    }
+  });
+
+  /**
+   * DELETE /api/admin/supabase/databases/:name
+   * Remove a named database connection.
+   */
+  router.delete('/supabase/databases/:name', (req: Request, res: Response) => {
+    try {
+      const name = req.params.name as string;
+      const config = getConfig();
+
+      if (!config.supabaseDatabases?.[name]) {
+        res.status(404).json({ error: `Database "${name}" not found` });
+        return;
+      }
+
+      delete config.supabaseDatabases[name];
+      saveConfig(config);
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('[Admin] Delete database error:', error.message);
+      res.status(500).json({ error: 'Failed to delete database' });
+    }
+  });
+
+  /**
+   * POST /api/admin/supabase/databases/:name/test
+   * Test a specific database connection.
+   */
+  router.post('/supabase/databases/:name/test', async (req: Request, res: Response) => {
+    try {
+      const name = req.params.name as string;
+      const databases = getSupabaseDatabases();
+      const dbConfig = databases[name];
+
+      if (!dbConfig) {
+        res.status(404).json({ ok: false, error: `Database "${name}" not found` });
+        return;
+      }
+
+      if (!dbConfig.url || !dbConfig.anonKey) {
+        res.status(400).json({ ok: false, error: 'Database URL and anon key are required' });
+        return;
+      }
+
+      const service = createSupabaseService({
+        url: dbConfig.url,
+        anonKey: dbConfig.anonKey,
+        enabledTables: dbConfig.enabledTables,
+        maxRowsPerQuery: dbConfig.maxRowsPerQuery || 1000,
+        queryTimeoutMs: dbConfig.queryTimeoutMs || 30000
+      });
+
+      const startTime = Date.now();
+      const tables = await service.listTables();
+      const durationMs = Date.now() - startTime;
+
+      res.json({
+        ok: true,
+        name,
+        tables,
+        tableCount: tables.length,
+        durationMs
+      });
+    } catch (error: any) {
+      console.error('[Admin] Database test error:', error.message);
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
   /**
    * POST /api/admin/ollama/test
    * Test Ollama connectivity and model availability.
@@ -412,6 +580,7 @@ export function createAdminRoutes(db: IDatabase): Router {
         parameters: JSON.parse(p.parametersJson || '{}'),
         outputSchema: JSON.parse(p.outputSchemaJson || '[]'),
         isActive: p.isActive,
+        databaseName: p.databaseName,
         createdBy: p.createdBy,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt
@@ -442,6 +611,7 @@ export function createAdminRoutes(db: IDatabase): Router {
         parameters: JSON.parse(preset.parametersJson || '{}'),
         outputSchema: JSON.parse(preset.outputSchemaJson || '[]'),
         isActive: preset.isActive,
+        databaseName: preset.databaseName,
         createdBy: preset.createdBy,
         createdAt: preset.createdAt,
         updatedAt: preset.updatedAt
@@ -458,7 +628,7 @@ export function createAdminRoutes(db: IDatabase): Router {
    */
   router.post('/presets', async (req: Request, res: Response) => {
     try {
-      const { name, label, description, sql, parameters, outputSchema } = req.body;
+      const { name, label, description, sql, parameters, outputSchema, databaseName } = req.body;
 
       if (!name || !label || !sql) {
         res.status(400).json({ error: 'name, label, and sql are required' });
@@ -472,6 +642,7 @@ export function createAdminRoutes(db: IDatabase): Router {
         sql,
         parameters,
         outputSchema,
+        databaseName,
         createdBy: req.user!.userId
       });
 
@@ -482,6 +653,7 @@ export function createAdminRoutes(db: IDatabase): Router {
         description: preset.description,
         sql: preset.sql,
         parameters: JSON.parse(preset.parametersJson || '{}'),
+        databaseName: preset.databaseName,
         isActive: preset.isActive
       });
     } catch (error: any) {
@@ -496,7 +668,7 @@ export function createAdminRoutes(db: IDatabase): Router {
    */
   router.put('/presets/:id', async (req: Request, res: Response) => {
     try {
-      const { name, label, description, sql, parameters, outputSchema, isActive } = req.body;
+      const { name, label, description, sql, parameters, outputSchema, isActive, databaseName } = req.body;
 
       const preset = await presetsService.update(req.params.id as string, {
         name,
@@ -505,7 +677,8 @@ export function createAdminRoutes(db: IDatabase): Router {
         sql,
         parameters,
         outputSchema,
-        isActive
+        isActive,
+        databaseName
       });
 
       res.json({
@@ -515,6 +688,7 @@ export function createAdminRoutes(db: IDatabase): Router {
         description: preset.description,
         sql: preset.sql,
         parameters: JSON.parse(preset.parametersJson || '{}'),
+        databaseName: preset.databaseName,
         isActive: preset.isActive
       });
     } catch (error: any) {

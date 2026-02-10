@@ -232,6 +232,7 @@ export interface QueryPreset {
   outputSchemaJson: string;
   isActive: boolean;
   createdBy: string;
+  databaseName: string;  // Which Supabase database this preset targets
   createdAt: Date;
   updatedAt: Date;
 }

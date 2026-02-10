@@ -284,6 +284,16 @@ export interface SystemConfig {
   brevo: { hasApiKey: boolean; defaultSenderName: string; defaultSenderEmail: string };
   google: { hasClientId: boolean; hasClientSecret: boolean };
   supabase?: { hasUrl: boolean; hasAnonKey: boolean; maxRowsPerQuery: number; queryTimeoutMs: number };
+  supabaseDatabases?: Record<string, { hasUrl: boolean; hasAnonKey: boolean; enabledTables: string[]; maxRowsPerQuery: number; queryTimeoutMs: number }>;
+}
+
+export interface SupabaseDatabaseInfo {
+  name: string;
+  hasUrl: boolean;
+  hasAnonKey: boolean;
+  enabledTables: string[];
+  maxRowsPerQuery: number;
+  queryTimeoutMs: number;
 }
 
 export const admin = {
@@ -322,6 +332,21 @@ export const admin = {
       method: 'POST',
     }),
   getSystem: () => request<SystemConfig>('/admin/system'),
+
+  // Multi-database management
+  listSupabaseDatabases: () =>
+    request<SupabaseDatabaseInfo[]>('/admin/supabase/databases'),
+  updateSupabaseDatabase: (name: string, config: { url?: string; anonKey?: string; enabledTables?: string[]; maxRowsPerQuery?: number; queryTimeoutMs?: number }) =>
+    request<{ success: boolean; name: string }>(`/admin/supabase/databases/${name}`, {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    }),
+  deleteSupabaseDatabase: (name: string) =>
+    request<{ success: boolean }>(`/admin/supabase/databases/${name}`, { method: 'DELETE' }),
+  testSupabaseDatabase: (name: string) =>
+    request<{ ok: boolean; name: string; tables?: string[]; tableCount?: number; durationMs?: number; error?: string }>(`/admin/supabase/databases/${name}/test`, {
+      method: 'POST',
+    }),
 };
 
 // Chat

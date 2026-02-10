@@ -74,6 +74,50 @@ export interface Config {
     maxRowsPerQuery?: number;
     queryTimeoutMs?: number;
   };
+  supabaseDatabases?: Record<string, {
+    url: string;
+    anonKey: string;
+    enabledTables?: string[];
+    maxRowsPerQuery?: number;
+    queryTimeoutMs?: number;
+  }>;
+}
+
+/** Single Supabase database config. */
+export interface SupabaseDatabaseConfig {
+  url: string;
+  anonKey: string;
+  enabledTables?: string[];
+  maxRowsPerQuery?: number;
+  queryTimeoutMs?: number;
+}
+
+/**
+ * Get all Supabase database configurations.
+ * Handles backward compatibility: if only `supabase` is set, treat it as 'default'.
+ */
+export function getSupabaseDatabases(): Record<string, SupabaseDatabaseConfig> {
+  const config = getConfig();
+  const databases: Record<string, SupabaseDatabaseConfig> = {};
+
+  // New multi-database config takes precedence
+  if (config.supabaseDatabases && Object.keys(config.supabaseDatabases).length > 0) {
+    for (const [name, dbConfig] of Object.entries(config.supabaseDatabases)) {
+      databases[name] = dbConfig;
+    }
+  }
+  // Backward compat: single supabase config becomes 'default'
+  else if (config.supabase?.url && config.supabase?.anonKey) {
+    databases['default'] = {
+      url: config.supabase.url,
+      anonKey: config.supabase.anonKey,
+      enabledTables: config.supabase.enabledTables,
+      maxRowsPerQuery: config.supabase.maxRowsPerQuery,
+      queryTimeoutMs: config.supabase.queryTimeoutMs
+    };
+  }
+
+  return databases;
 }
 
 const HIVE_DIR = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.hive');

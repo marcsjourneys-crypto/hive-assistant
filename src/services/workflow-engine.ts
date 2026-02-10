@@ -9,7 +9,7 @@ import { getUserWorkspacePath } from '../utils/user-workspace';
 import { getTools, ToolContext } from '../core/tools';
 import type { GoogleCalendarService } from './google-calendar';
 import type { GmailService } from './gmail';
-import type { SupabaseService } from './supabase';
+import type { SupabaseConnectionManager } from './supabase';
 
 /** Input mapping for a workflow step. */
 export interface InputMapping {
@@ -65,7 +65,7 @@ export class WorkflowEngine {
     private notificationSender?: NotificationSender,
     private googleCalendar?: GoogleCalendarService,
     private gmail?: GmailService,
-    private supabase?: SupabaseService
+    private supabase?: SupabaseConnectionManager
   ) {}
 
   /**

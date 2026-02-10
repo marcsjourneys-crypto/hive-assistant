@@ -9,8 +9,8 @@ export interface SupabaseConfig {
   url: string;              // https://xxx.supabase.co
   anonKey: string;          // For read-only access
   enabledTables?: string[]; // Whitelist of accessible tables (empty = all)
-  maxRowsPerQuery: number;  // Default 1000
-  queryTimeoutMs: number;   // Default 30000
+  maxRowsPerQuery?: number; // Default 1000
+  queryTimeoutMs?: number;  // Default 30000
 }
 
 export interface TableSchema {
@@ -52,10 +52,12 @@ export class SupabaseService {
     }
 
     // Add row limit if not present
-    const limitedSql = this.addRowLimit(sql, this.config.maxRowsPerQuery);
+    const maxRows = this.config.maxRowsPerQuery ?? 1000;
+    const limitedSql = this.addRowLimit(sql, maxRows);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.config.queryTimeoutMs);
+    const timeout = this.config.queryTimeoutMs ?? 30000;
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
       // Use Supabase REST API's raw SQL endpoint
@@ -90,13 +92,13 @@ export class SupabaseService {
       return {
         rows,
         count: rows.length,
-        truncated: rows.length >= this.config.maxRowsPerQuery
+        truncated: rows.length >= maxRows
       };
     } catch (err: any) {
       clearTimeout(timeoutId);
 
       if (err.name === 'AbortError') {
-        throw new Error(`Query timed out after ${this.config.queryTimeoutMs}ms`);
+        throw new Error(`Query timed out after ${timeout}ms`);
       }
 
       throw new Error(this.sanitizeError(err.message));
@@ -147,7 +149,8 @@ export class SupabaseService {
     }
 
     // Handle LIMIT
-    const rowLimit = limit ? Math.min(parseInt(limit), this.config.maxRowsPerQuery) : this.config.maxRowsPerQuery;
+    const maxRows = this.config.maxRowsPerQuery ?? 1000;
+    const rowLimit = limit ? Math.min(parseInt(limit), maxRows) : maxRows;
     queryParams.push(`limit=${rowLimit}`);
 
     if (queryParams.length > 0) {
@@ -155,7 +158,8 @@ export class SupabaseService {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.config.queryTimeoutMs);
+    const timeout = this.config.queryTimeoutMs ?? 30000;
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
       const response = await fetch(url, {
@@ -186,7 +190,7 @@ export class SupabaseService {
       clearTimeout(timeoutId);
 
       if (err.name === 'AbortError') {
-        throw new Error(`Query timed out after ${this.config.queryTimeoutMs}ms`);
+        throw new Error(`Query timed out after ${timeout}ms`);
       }
 
       throw new Error(this.sanitizeError(err.message));
@@ -430,4 +434,120 @@ export function createSupabaseService(config: SupabaseConfig): SupabaseService {
     maxRowsPerQuery: config.maxRowsPerQuery ?? 1000,
     queryTimeoutMs: config.queryTimeoutMs ?? 30000
   });
+}
+
+/**
+ * Manager for multiple named Supabase database connections.
+ * Caches SupabaseService instances and provides lookup by name.
+ */
+export class SupabaseConnectionManager {
+  private connections: Map<string, SupabaseService> = new Map();
+  private defaultName: string | null = null;
+
+  constructor(private configs: Record<string, SupabaseConfig>) {
+    // Determine default database name
+    const names = Object.keys(configs);
+    if (names.length > 0) {
+      // Prefer 'default' if it exists, otherwise use first entry
+      this.defaultName = names.includes('default') ? 'default' : names[0];
+    }
+  }
+
+  /**
+   * Get or create a connection by name.
+   * If name is not provided, returns the default connection.
+   */
+  get(name?: string): SupabaseService | null {
+    const targetName = name || this.defaultName;
+    if (!targetName) return null;
+
+    // Return cached connection if exists
+    if (this.connections.has(targetName)) {
+      return this.connections.get(targetName)!;
+    }
+
+    // Create new connection if config exists
+    const config = this.configs[targetName];
+    if (!config) return null;
+
+    const service = createSupabaseService(config);
+    this.connections.set(targetName, service);
+    return service;
+  }
+
+  /**
+   * List available database names.
+   */
+  listDatabases(): string[] {
+    return Object.keys(this.configs);
+  }
+
+  /**
+   * Get the default database name.
+   */
+  getDefaultName(): string | null {
+    return this.defaultName;
+  }
+
+  /**
+   * Check if a database exists by name.
+   */
+  has(name: string): boolean {
+    return name in this.configs;
+  }
+
+  /**
+   * Test all connections.
+   */
+  async testAll(): Promise<Record<string, { ok: boolean; tables?: string[]; error?: string }>> {
+    const results: Record<string, { ok: boolean; tables?: string[]; error?: string }> = {};
+
+    for (const name of this.listDatabases()) {
+      try {
+        const service = this.get(name);
+        if (!service) {
+          results[name] = { ok: false, error: 'Failed to create connection' };
+          continue;
+        }
+
+        const tables = await service.listTables();
+        results[name] = { ok: true, tables };
+      } catch (err: any) {
+        results[name] = { ok: false, error: err.message };
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Test a specific connection by name.
+   */
+  async test(name: string): Promise<{ ok: boolean; tables?: string[]; error?: string }> {
+    try {
+      const service = this.get(name);
+      if (!service) {
+        return { ok: false, error: `Database "${name}" not found` };
+      }
+
+      const tables = await service.listTables();
+      return { ok: true, tables };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  /**
+   * Get count of configured databases.
+   */
+  count(): number {
+    return Object.keys(this.configs).length;
+  }
+}
+
+/**
+ * Create a SupabaseConnectionManager from configs.
+ */
+export function createSupabaseConnectionManager(configs: Record<string, SupabaseConfig>): SupabaseConnectionManager {
+  return new SupabaseConnectionManager(configs);
 }

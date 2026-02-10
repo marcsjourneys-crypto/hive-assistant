@@ -308,6 +308,7 @@ export class SQLiteDatabase implements IDatabase {
         output_schema_json TEXT DEFAULT '[]',
         is_active INTEGER DEFAULT 1,
         created_by TEXT NOT NULL,
+        database_name TEXT DEFAULT 'default',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
@@ -345,6 +346,13 @@ export class SQLiteDatabase implements IDatabase {
     const contactColNames = new Set(contactCols.map(c => c.name));
     if (!contactColNames.has('relationship')) {
       this.db.exec('ALTER TABLE contacts ADD COLUMN relationship TEXT');
+    }
+
+    // Migration: add database_name column to query_presets (safe for existing DBs)
+    const presetCols = this.db.pragma('table_info(query_presets)') as Array<{ name: string }>;
+    const presetColNames = new Set(presetCols.map(c => c.name));
+    if (!presetColNames.has('database_name')) {
+      this.db.exec("ALTER TABLE query_presets ADD COLUMN database_name TEXT DEFAULT 'default'");
     }
   }
   
@@ -1315,12 +1323,12 @@ export class SQLiteDatabase implements IDatabase {
   async createQueryPreset(preset: Omit<QueryPreset, 'createdAt' | 'updatedAt'>): Promise<QueryPreset> {
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO query_presets (id, name, label, description, sql, parameters_json, output_schema_json, is_active, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO query_presets (id, name, label, description, sql, parameters_json, output_schema_json, is_active, created_by, database_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       preset.id, preset.name, preset.label, preset.description,
       preset.sql, preset.parametersJson, preset.outputSchemaJson,
-      preset.isActive ? 1 : 0, preset.createdBy, now, now
+      preset.isActive ? 1 : 0, preset.createdBy, preset.databaseName || 'default', now, now
     );
     return this.getQueryPreset(preset.id) as Promise<QueryPreset>;
   }
@@ -1337,6 +1345,7 @@ export class SQLiteDatabase implements IDatabase {
     if (updates.parametersJson !== undefined) { sets.push('parameters_json = ?'); values.push(updates.parametersJson); }
     if (updates.outputSchemaJson !== undefined) { sets.push('output_schema_json = ?'); values.push(updates.outputSchemaJson); }
     if (updates.isActive !== undefined) { sets.push('is_active = ?'); values.push(updates.isActive ? 1 : 0); }
+    if (updates.databaseName !== undefined) { sets.push('database_name = ?'); values.push(updates.databaseName); }
 
     values.push(presetId);
     this.db.prepare(`UPDATE query_presets SET ${sets.join(', ')} WHERE id = ?`).run(...values);
@@ -1617,6 +1626,7 @@ export class SQLiteDatabase implements IDatabase {
       outputSchemaJson: row.output_schema_json || '[]',
       isActive: row.is_active === 1,
       createdBy: row.created_by,
+      databaseName: row.database_name || 'default',
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };

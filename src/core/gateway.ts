@@ -14,7 +14,7 @@ import { WorkflowTriggerService } from '../services/workflow-trigger';
 import { ScriptRunner } from '../services/script-runner';
 import { GoogleCalendarService } from '../services/google-calendar';
 import { GmailService } from '../services/gmail';
-import { SupabaseService } from '../services/supabase';
+import { SupabaseConnectionManager } from '../services/supabase';
 import { getTools, ToolContext } from './tools';
 
 /** Configuration for creating a Gateway instance. */
@@ -32,7 +32,7 @@ export interface GatewayConfig {
   scriptRunner?: ScriptRunner;
   googleCalendar?: GoogleCalendarService;
   gmail?: GmailService;
-  supabase?: SupabaseService;
+  supabase?: SupabaseConnectionManager;
 }
 
 /** Result returned from handleMessage. */
@@ -68,7 +68,7 @@ export class Gateway {
   private scriptRunner?: ScriptRunner;
   private googleCalendar?: GoogleCalendarService;
   private gmail?: GmailService;
-  private supabase?: SupabaseService;
+  private supabase?: SupabaseConnectionManager;
   private skillsCache: SkillMeta[] | null = null;
 
   constructor(config: GatewayConfig) {
