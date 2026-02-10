@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { integrations, admin } from '../api';
 
+// Version tag for debugging deployment issues
+const BUILD_VERSION = '2026-02-09-supabase-v1';
+
 export default function IntegrationsPage() {
   const [googleConnected, setGoogleConnected] = useState(false);
   const [gmailAuthorized, setGmailAuthorized] = useState(false);
@@ -22,6 +25,7 @@ export default function IntegrationsPage() {
   const [supabaseTestResult, setSupabaseTestResult] = useState<{ ok: boolean; tables?: string[]; error?: string } | null>(null);
 
   useEffect(() => {
+    console.log('[Integrations] BUILD_VERSION:', BUILD_VERSION);
     loadStatus();
     checkUrlParams();
   }, []);
@@ -44,7 +48,9 @@ export default function IntegrationsPage() {
 
     // Load Supabase config for admins
     try {
+      console.log('[Integrations] Calling admin.getSystem()...');
       const systemConfig = await admin.getSystem();
+      console.log('[Integrations] admin.getSystem() success, supabase config:', systemConfig.supabase);
       setIsAdmin(true);
       if (systemConfig.supabase) {
         setSupabaseConfig({
@@ -54,7 +60,8 @@ export default function IntegrationsPage() {
           queryTimeoutMs: systemConfig.supabase.queryTimeoutMs || 30000
         });
       }
-    } catch {
+    } catch (err) {
+      console.log('[Integrations] admin.getSystem() failed:', err);
       setIsAdmin(false);
     }
 
@@ -356,6 +363,11 @@ export default function IntegrationsPage() {
         {/* Placeholder for future integrations */}
         <div className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-6 text-center">
           <p className="text-gray-400 text-sm">More integrations coming soon (GitHub, Slack, etc.)</p>
+        </div>
+
+        {/* Debug: Version indicator */}
+        <div className="mt-4 text-xs text-gray-300 text-right">
+          Build: {BUILD_VERSION} | isAdmin: {isAdmin ? 'true' : 'false'}
         </div>
       </div>
     </div>
