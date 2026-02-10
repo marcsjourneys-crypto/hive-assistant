@@ -111,7 +111,7 @@ export class Gateway {
     message: string,
     channel: 'whatsapp' | 'telegram' | 'cli' | 'web' | 'workflow',
     conversationId?: string,
-    options?: { forceSkill?: string; tools?: string[] }
+    options?: { forceSkill?: string; tools?: string[]; skipHistory?: boolean }
   ): Promise<HandleMessageResult> {
     // 0. Resolve channel identity to owner user ID if applicable.
     //    e.g. tg:123456 → marc (if a channel identity mapping exists).
@@ -132,12 +132,15 @@ export class Gateway {
       content: message
     });
 
-    // 4. Load recent messages for context
-    const dbMessages = await this.db.getMessages(convId, 20);
-    const recentMessages = dbMessages
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .slice(-10)
-      .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+    // 4. Load recent messages for context (skip if workflow step to prevent history pollution)
+    let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    if (!options?.skipHistory) {
+      const dbMessages = await this.db.getMessages(convId, 20);
+      recentMessages = dbMessages
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .slice(-10)
+        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+    }
 
     // 5. Load available skills metadata (per-user if resolver available)
     const skills = this.skillResolver

@@ -345,7 +345,13 @@ export class WorkflowEngine {
       message = 'Process this workflow step.';
     }
 
-    const handleOptions: { forceSkill?: string; tools?: string[] } = {};
+    const handleOptions: { forceSkill?: string; tools?: string[]; skipHistory?: boolean } = {
+      // Skip conversation history for workflow steps to prevent old data
+      // from polluting new results (e.g., AI copying old briefs instead of
+      // making fresh tool calls). Workflow steps receive all needed context
+      // from previous step outputs.
+      skipHistory: true
+    };
     if (step.skillName) handleOptions.forceSkill = step.skillName;
     if (step.tools?.length) handleOptions.tools = step.tools;
 
@@ -354,7 +360,7 @@ export class WorkflowEngine {
       message,
       'workflow' as any,
       undefined,
-      Object.keys(handleOptions).length > 0 ? handleOptions : undefined
+      handleOptions
     );
 
     return { response: result.response };
